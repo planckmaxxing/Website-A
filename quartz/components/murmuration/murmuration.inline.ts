@@ -1,15 +1,14 @@
 /**
- * Pure 3D Starling Murmuration Canvas Controller
+ * High-Performance 4K 120fps 3D Starling Murmuration Renderer
  *
- * - 10,500 crisp micro-dot particles on desktop (> 860px), 4,500 on mobile (<= 860px)
- * - Flat Float32Array / Uint8Array buffers with zero per-frame allocations
- * - Pre-rendered high-DPI offscreen circular dot sprite atlas (20 opacity levels x 4 size steps)
- *   blitted 1:1 in physical pixels via O(N) depth-bucketed linked-list drawImage calls
- * - Solid background clear every frame (zero motion tails)
- * - 4 overlapping sub-flock ribbons driven by 128-node periodic 3D flight spines
- *   on an exact integer-harmonic 36-second seamless loop
- * - Soft ellipsoidal 3D containment + outer 13.5% margin alpha fade on all 4 edges
- * - Fixed canonical 3D camera framing + wake-only pointer & touch scattering
+ * Architecture:
+ * - WebGL2 / WebGL1 single-draw-call GPU point-sprite renderer (1 gl.drawArrays per frame)
+ *   with automatic Canvas2D fallback if WebGL is unavailable
+ * - Native high-DPI support up to 3x DPR for razor-sharp 4K & mobile displays
+ * - 4096-entry Float32Array sin/cos lookup table eliminating ~160k Math.sin/cos calls/frame
+ * - Frame-rate independent physics step (consistent motion across 60Hz, 120Hz, 144Hz)
+ * - 4 overlapping sub-flock ribbons driven by 128-node periodic 3D flight spines (36s loop)
+ * - Wake-only pointer & touch scattering + outer 13.5% margin alpha fade
  * - Synchronized with data-theme="dark" | "light"
  */
 ;(function () {
@@ -20,70 +19,144 @@
     const maybeCanvas = document.getElementById("swarmCanvas") as HTMLCanvasElement | null
     if (!maybeCanvas) return
     const canvas = maybeCanvas
-    const maybeCtx = canvas.getContext("2d", { alpha: false, desynchronized: true })
-    if (!maybeCtx) return
-    const ctx = maybeCtx
-    ctx.imageSmoothingEnabled = false
 
     win.__murmurationInitialized = true
 
     const TWO_PI = Math.PI * 2
+    const HALF_PI = Math.PI * 0.5
     const PARTICLE_COUNT = window.innerWidth <= 860 ? 4500 : 10500
 
+    // Exact periodic master cycle (36 seconds)
     const LOOP_PERIOD = 36.0
     const OMEGA = TWO_PI / LOOP_PERIOD
 
+    // 4 interacting starling sub-flock ribbons, 128 sampled nodes per periodic spine
     const FLOCK_COUNT = 4
     const SPINE_SAMPLES = 128
     const SPINE_MASK = SPINE_SAMPLES - 1
     const SPINE_TOTAL = FLOCK_COUNT * SPINE_SAMPLES
 
-    const ALPHA_LEVELS = 20
-    const SIZE_LEVELS = 4
-    const SIZE_RADII_CSS = new Float32Array([0.42, 0.56, 0.7, 0.84])
-    const CELL_CSS = 6
+    // 4096-entry Fast Sin/Cos Lookup Table
+    const LUT_SIZE = 4096
+    const LUT_MASK = LUT_SIZE - 1
+    const LUT_SCALE = LUT_SIZE / TWO_PI
+    const LUT_QUARTER = LUT_SIZE >> 2
+    const SIN_LUT = new Float32Array(LUT_SIZE)
+    for (let i = 0; i < LUT_SIZE; i++) {
+      SIN_LUT[i] = Math.sin((i / LUT_SIZE) * TWO_PI)
+    }
 
-    const atlasCanvas = document.createElement("canvas")
-    const atlasCtx = atlasCanvas.getContext("2d")!
-    let atlasDpr = 0
-    let atlasThemeIsDark: boolean | null = null
-    let cellPx = 6
-    let halfCellPx = 3
+    function fastSin(x: number): number {
+      return SIN_LUT[((x * LUT_SCALE) | 0) & LUT_MASK]
+    }
+    function fastCos(x: number): number {
+      return SIN_LUT[(((x * LUT_SCALE) | 0) + LUT_QUARTER) & LUT_MASK]
+    }
+    function fastTanh(x: number): number {
+      if (x > 3.0) return 1.0
+      if (x < -3.0) return -1.0
+      const x2 = x * x
+      return (x * (27.0 + x2)) / (27.0 + 9.0 * x2)
+    }
 
     function getThemeIsDark(): boolean {
       return document.documentElement.getAttribute("data-theme") !== "light"
     }
 
     let isDarkMode = getThemeIsDark()
-    let bgHex = isDarkMode ? "#1e1e1e" : "#ffffff"
 
-    function buildSpriteAtlas(targetDpr: number, dark: boolean) {
-      if (atlasDpr === targetDpr && atlasThemeIsDark === dark) return
-      atlasDpr = targetDpr
-      atlasThemeIsDark = dark
-      cellPx = Math.max(4, Math.round(CELL_CSS * atlasDpr))
-      halfCellPx = cellPx * 0.5
+    // Try WebGL2 -> WebGL1 -> Canvas2D fallback
+    const gl = (canvas.getContext("webgl2", {
+      alpha: false,
+      antialias: false,
+      depth: false,
+      stencil: false,
+      preserveDrawingBuffer: false,
+      powerPreference: "high-performance",
+    }) ||
+      canvas.getContext("webgl", {
+        alpha: false,
+        antialias: false,
+        depth: false,
+        stencil: false,
+        preserveDrawingBuffer: false,
+        powerPreference: "high-performance",
+      })) as WebGLRenderingContext | null
 
-      atlasCanvas.width = ALPHA_LEVELS * cellPx
-      atlasCanvas.height = SIZE_LEVELS * cellPx
-      atlasCtx.clearRect(0, 0, atlasCanvas.width, atlasCanvas.height)
+    let ctx2d: CanvasRenderingContext2D | null = null
+    let glProgram: WebGLProgram | null = null
+    let glBuffer: WebGLBuffer | null = null
+    let uResolutionLoc: WebGLUniformLocation | null = null
+    let uColorLoc: WebGLUniformLocation | null = null
+    // Interleaved per-particle GPU buffer: [xPx, yPx, pointSizePx, alpha]
+    const gpuData = new Float32Array(PARTICLE_COUNT * 4)
 
-      const dotRgb = dark ? "226, 228, 232" : "10, 10, 10"
-
-      for (let s = 0; s < SIZE_LEVELS; s++) {
-        const rPx = SIZE_RADII_CSS[s] * atlasDpr
-        const cy = s * cellPx + halfCellPx
-
-        for (let a = 0; a < ALPHA_LEVELS; a++) {
-          const alpha = 0.04 + (a / (ALPHA_LEVELS - 1)) * 0.9
-          const cx = a * cellPx + halfCellPx
-
-          atlasCtx.fillStyle = `rgba(${dotRgb}, ${alpha.toFixed(3)})`
-          atlasCtx.beginPath()
-          atlasCtx.arc(cx, cy, rPx, 0, TWO_PI)
-          atlasCtx.fill()
+    if (gl) {
+      const vsSource = `
+        attribute vec2 a_pos;
+        attribute float a_size;
+        attribute float a_alpha;
+        uniform vec2 u_resolution;
+        varying float v_alpha;
+        void main() {
+          vec2 clip = (a_pos / u_resolution) * 2.0 - 1.0;
+          gl_Position = vec4(clip.x, -clip.y, 0.0, 1.0);
+          gl_PointSize = a_size;
+          v_alpha = a_alpha;
         }
+      `
+      const fsSource = `
+        precision mediump float;
+        uniform vec3 u_color;
+        varying float v_alpha;
+        void main() {
+          vec2 d = gl_PointCoord - vec2(0.5);
+          float r = length(d) * 2.0;
+          float edge = 1.0 - smoothstep(0.58, 1.0, r);
+          if (edge <= 0.004) discard;
+          gl_FragColor = vec4(u_color, v_alpha * edge);
+        }
+      `
+
+      const compile = (type: number, src: string) => {
+        const s = gl.createShader(type)!
+        gl.shaderSource(s, src)
+        gl.compileShader(s)
+        return s
       }
+
+      glProgram = gl.createProgram()!
+      gl.attachShader(glProgram, compile(gl.VERTEX_SHADER, vsSource))
+      gl.attachShader(glProgram, compile(gl.FRAGMENT_SHADER, fsSource))
+      gl.linkProgram(glProgram)
+      gl.useProgram(glProgram)
+
+      glBuffer = gl.createBuffer()
+      gl.bindBuffer(gl.ARRAY_BUFFER, glBuffer)
+      gl.bufferData(gl.ARRAY_BUFFER, gpuData.byteLength, gl.DYNAMIC_DRAW)
+
+      const aPos = gl.getAttribLocation(glProgram, "a_pos")
+      const aSize = gl.getAttribLocation(glProgram, "a_size")
+      const aAlpha = gl.getAttribLocation(glProgram, "a_alpha")
+      const stride = 16 // 4 floats * 4 bytes
+
+      gl.enableVertexAttribArray(aPos)
+      gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, stride, 0)
+      gl.enableVertexAttribArray(aSize)
+      gl.vertexAttribPointer(aSize, 1, gl.FLOAT, false, stride, 8)
+      gl.enableVertexAttribArray(aAlpha)
+      gl.vertexAttribPointer(aAlpha, 1, gl.FLOAT, false, stride, 12)
+
+      uResolutionLoc = gl.getUniformLocation(glProgram, "u_resolution")
+      uColorLoc = gl.getUniformLocation(glProgram, "u_color")
+
+      gl.disable(gl.DEPTH_TEST)
+      gl.enable(gl.BLEND)
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+    } else {
+      ctx2d = canvas.getContext("2d", { alpha: false })
+      if (!ctx2d) return
+      ctx2d.imageSmoothingEnabled = false
     }
 
     let width = 1
@@ -92,28 +165,31 @@
     let physHeight = 1
     let dpr = 1
 
-    function syncTheme() {
+    function applyThemeColors() {
       isDarkMode = getThemeIsDark()
-      bgHex = isDarkMode ? "#1e1e1e" : "#ffffff"
-      buildSpriteAtlas(dpr, isDarkMode)
+      if (gl && glProgram) {
+        gl.useProgram(glProgram)
+        if (isDarkMode) {
+          gl.clearColor(0x1e / 255, 0x1e / 255, 0x1e / 255, 1.0)
+          gl.uniform3f(uColorLoc, 226 / 255, 228 / 255, 232 / 255)
+        } else {
+          gl.clearColor(1.0, 1.0, 1.0, 1.0)
+          gl.uniform3f(uColorLoc, 10 / 255, 10 / 255, 10 / 255)
+        }
+      }
     }
 
     function resize() {
       const parent = canvas.parentElement
       if (!parent) return
       const rect = parent.getBoundingClientRect()
-      const nextDpr = Math.min(window.devicePixelRatio || 1, 2)
+      const nextDpr = Math.min(window.devicePixelRatio || 1, 3)
       const nextWidth = Math.max(1, rect.width)
       const nextHeight = Math.max(1, rect.height)
       const nextPhysWidth = Math.round(nextWidth * nextDpr)
       const nextPhysHeight = Math.round(nextHeight * nextDpr)
 
-      if (
-        nextPhysWidth === physWidth &&
-        nextPhysHeight === physHeight &&
-        nextDpr === dpr &&
-        atlasDpr === nextDpr
-      ) {
+      if (nextPhysWidth === physWidth && nextPhysHeight === physHeight && nextDpr === dpr) {
         return
       }
 
@@ -125,12 +201,11 @@
       canvas.width = physWidth
       canvas.height = physHeight
 
-      buildSpriteAtlas(dpr, isDarkMode)
-
-      ctx.imageSmoothingEnabled = false
-      ctx.setTransform(1, 0, 0, 1, 0, 0)
-      ctx.fillStyle = bgHex
-      ctx.fillRect(0, 0, physWidth, physHeight)
+      if (gl && glProgram) {
+        gl.viewport(0, 0, physWidth, physHeight)
+        gl.useProgram(glProgram)
+        gl.uniform2f(uResolutionLoc, physWidth, physHeight)
+      }
     }
 
     if (typeof ResizeObserver !== "undefined" && canvas.parentElement) {
@@ -139,14 +214,14 @@
     }
     window.addEventListener("resize", resize)
 
-    // Observe data-theme changes on <html>
-    const themeObserver = new MutationObserver(() => syncTheme())
+    const themeObserver = new MutationObserver(() => applyThemeColors())
     themeObserver.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["data-theme"],
     })
-    document.addEventListener("themechange", syncTheme)
+    document.addEventListener("themechange", applyThemeColors)
 
+    applyThemeColors()
     resize()
 
     function smootherstep(t: number): number {
@@ -269,23 +344,23 @@
           const ang =
             s +
             cfg.yawOff +
-            0.44 * Math.sin(s - phi * cfg.h1 + cfg.p1) +
-            0.2 * Math.sin(2.0 * s + phi * cfg.h2 + cfg.p2)
+            0.44 * fastSin(s - phi * cfg.h1 + cfg.p1) +
+            0.2 * fastSin(2.0 * s + phi * cfg.h2 + cfg.p2)
 
           const r =
             cfg.rBase +
-            0.36 * Math.sin(s - phi * cfg.h3 + cfg.p2) +
-            0.22 * Math.cos(2.0 * s + phi * cfg.h1 + cfg.p3) +
-            0.1 * Math.sin(3.0 * s - phi * cfg.h4 + cfg.p1)
+            0.36 * fastSin(s - phi * cfg.h3 + cfg.p2) +
+            0.22 * fastCos(2.0 * s + phi * cfg.h1 + cfg.p3) +
+            0.1 * fastSin(3.0 * s - phi * cfg.h4 + cfg.p1)
 
           const y =
-            cfg.yAmp * Math.sin(s + phi * cfg.h2 + cfg.p3) +
-            0.3 * Math.cos(2.0 * s - phi * cfg.h4 + cfg.p1) +
-            0.14 * Math.sin(3.0 * s + phi * cfg.h3 + cfg.p2)
+            cfg.yAmp * fastSin(s + phi * cfg.h2 + cfg.p3) +
+            0.3 * fastCos(2.0 * s - phi * cfg.h4 + cfg.p1) +
+            0.14 * fastSin(3.0 * s + phi * cfg.h3 + cfg.p2)
 
-          const lx = r * Math.cos(ang)
+          const lx = r * fastCos(ang)
           const ly = y
-          const lz = r * Math.sin(ang)
+          const lz = r * fastSin(ang)
 
           const y1 = ly * cosTX - lz * sinTX
           const z1 = ly * sinTX + lz * cosTX
@@ -293,13 +368,13 @@
           const fy = lx * sinTZ + y1 * cosTZ
           const fz = z1
 
-          const gAng = s + 0.34 * Math.sin(s - phi * 3.0)
-          const gR = 0.9 + 0.3 * Math.cos(s + phi * 2.0) + 0.16 * Math.sin(2.0 * s - phi * 4.0)
-          const gY = 0.48 * Math.sin(s - phi * 2.0) + 0.22 * Math.cos(2.0 * s + phi * 3.0)
+          const gAng = s + 0.34 * fastSin(s - phi * 3.0)
+          const gR = 0.9 + 0.3 * fastCos(s + phi * 2.0) + 0.16 * fastSin(2.0 * s - phi * 4.0)
+          const gY = 0.48 * fastSin(s - phi * 2.0) + 0.22 * fastCos(2.0 * s + phi * 3.0)
 
-          const glx = gR * Math.cos(gAng)
+          const glx = gR * fastCos(gAng)
           const gly = gY
-          const glz = gR * Math.sin(gAng)
+          const glz = gR * fastSin(gAng)
 
           const gy1 = gly * cosGTX - glz * sinGTX
           const gz1 = gly * sinGTX + glz * cosGTX
@@ -363,10 +438,10 @@
           const sAngle = (k / SPINE_SAMPLES) * TWO_PI
           const bankAngle =
             0.78 * Math.atan2(kSide, 1.05 + Math.abs(kUp)) +
-            0.42 * Math.sin(sAngle - phi * cfg.h2 + cfg.p3)
+            0.42 * fastSin(sAngle - phi * cfg.h2 + cfg.p3)
 
-          const cosB = Math.cos(bankAngle)
-          const sinB = Math.sin(bankAngle)
+          const cosB = fastCos(bankAngle)
+          const sinB = fastSin(bankAngle)
 
           spWx[idx] = sx * cosB + ux * sinB
           spWy[idx] = sy * cosB + uy * sinB
@@ -377,7 +452,7 @@
           spHz[idx] = -sz * sinB + uz * cosB
 
           const compress = 1.0 / (1.0 + 1.65 * kappa)
-          const densityWave = 0.8 + 0.2 * Math.sin(2.0 * sAngle - phi * 6.0 + cfg.p1)
+          const densityWave = 0.8 + 0.2 * fastSin(2.0 * sAngle - phi * 6.0 + cfg.p1)
           spWidth[idx] = (0.095 + 0.355 * compress) * densityWave
           spThick[idx] = (0.028 + 0.132 * compress) * densityWave
         }
@@ -436,7 +511,7 @@
       pSheetH[i] = sh
       pStreamLag[i] = lag
       pPhase[i] = Math.random() * TWO_PI
-      pBaseRadius[i] = 0.4 + Math.random() * 0.28
+      pBaseRadius[i] = 0.42 + Math.random() * 0.3
 
       let s = (u0 + lag) % TWO_PI
       if (s < 0) s += TWO_PI
@@ -502,22 +577,18 @@
       pointer.active = true
       updatePointer(e.clientX, e.clientY, true)
     })
-
     canvas.addEventListener("pointermove", (e) => {
       if (e.pointerType === "touch") return
       pointer.active = true
       updatePointer(e.clientX, e.clientY, false)
     })
-
     canvas.addEventListener("pointerup", (e) => {
       if (e.pointerType === "touch") return
       pointer.active = false
     })
-
     canvas.addEventListener("pointerleave", () => {
       pointer.active = false
     })
-
     canvas.addEventListener(
       "touchstart",
       (e) => {
@@ -529,7 +600,6 @@
       },
       { passive: true },
     )
-
     canvas.addEventListener(
       "touchmove",
       (e) => {
@@ -541,28 +611,12 @@
       },
       { passive: true },
     )
-
-    canvas.addEventListener(
-      "touchend",
-      () => {
-        pointer.active = false
-      },
-      { passive: true },
-    )
-
-    canvas.addEventListener(
-      "touchcancel",
-      () => {
-        pointer.active = false
-      },
-      { passive: true },
-    )
-
-    const projPhysX = new Float32Array(PARTICLE_COUNT)
-    const projPhysY = new Float32Array(PARTICLE_COUNT)
-    const projSizeIdx = new Uint8Array(PARTICLE_COUNT)
-    const bucketHead = new Int32Array(ALPHA_LEVELS)
-    const bucketNext = new Int32Array(PARTICLE_COUNT)
+    canvas.addEventListener("touchend", () => {
+      pointer.active = false
+    })
+    canvas.addEventListener("touchcancel", () => {
+      pointer.active = false
+    })
 
     const flockMeanVx = new Float32Array(FLOCK_COUNT)
     const flockMeanVy = new Float32Array(FLOCK_COUNT)
@@ -578,31 +632,37 @@
     const FOV = 3.25
 
     let startTime = 0
+    let lastNow = 0
 
     function animate(now: number) {
-      if (startTime === 0) startTime = now
+      if (startTime === 0) {
+        startTime = now
+        lastNow = now
+      }
 
       if (document.hidden || width <= 2 || height <= 2) {
+        lastNow = now
         requestAnimationFrame(animate)
         return
       }
+
+      const rawDt = now - lastNow
+      lastNow = now
+      // Normalized to 60Hz baseline so 60Hz, 120Hz, and 144Hz move at identical speed
+      const dtScale = rawDt > 0 ? Math.min(2.0, rawDt * 0.06) : 1.0
 
       const time = (now - startTime) * 0.001
       const phi = (time * OMEGA) % TWO_PI
 
       updateMurmurationSpines(phi)
 
-      ctx.setTransform(1, 0, 0, 1, 0, 0)
-      ctx.fillStyle = bgHex
-      ctx.fillRect(0, 0, physWidth, physHeight)
-
       if (!pointer.active) {
-        pointer.energy *= 0.9
-        pointer.vx *= 0.85
-        pointer.vy *= 0.85
+        pointer.energy *= Math.pow(0.9, dtScale)
+        pointer.vx *= Math.pow(0.85, dtScale)
+        pointer.vy *= Math.pow(0.85, dtScale)
       } else {
-        pointer.vx *= 0.82
-        pointer.vy *= 0.82
+        pointer.vx *= Math.pow(0.82, dtScale)
+        pointer.vy *= Math.pow(0.82, dtScale)
       }
 
       const scale = Math.min(width, height) * 0.322
@@ -634,13 +694,20 @@
         flockMeanVz[f] /= c
       }
 
-      bucketHead.fill(-1)
-
       const phi2 = phi * 2.0
       const t135 = time * 1.35
       const t122 = time * 1.22
       const t142 = time * 1.42
       const t380 = time * 3.8
+
+      const dampCore = Math.pow(0.888, dtScale)
+      const dampStrag = Math.pow(0.905, dtScale)
+      const springCore = 0.026 * dtScale
+      const springStrag = 0.016 * dtScale
+      const alignCore = 0.068 * dtScale
+      const alignStrag = 0.024 * dtScale
+
+      let visibleCount = 0
 
       for (let i = 0; i < PARTICLE_COUNT; i++) {
         const f = pFlock[i]
@@ -684,14 +751,14 @@
         const cp5 = cPhi * 5.0
 
         const curlX =
-          Math.sin(cy * 1.15 + cp1) * Math.cos(cz * 1.15 - cp3) +
-          0.34 * Math.sin(cz * 2.35 + cp2) * Math.cos(cx * 2.35 - cp1)
+          fastSin(cy * 1.15 + cp1) * fastCos(cz * 1.15 - cp3) +
+          0.34 * fastSin(cz * 2.35 + cp2) * fastCos(cx * 2.35 - cp1)
         const curlY =
-          Math.sin(cz * 1.15 + cp3) * Math.cos(cx * 1.15 + cp1) +
-          0.34 * Math.cos(cx * 2.35 - cp2) * Math.sin(cy * 2.35 + cp5)
+          fastSin(cz * 1.15 + cp3) * fastCos(cx * 1.15 + cp1) +
+          0.34 * fastCos(cx * 2.35 - cp2) * fastSin(cy * 2.35 + cp5)
         const curlZ =
-          Math.sin(cx * 1.15 - cp1) * Math.cos(cy * 1.15 + cp3) +
-          0.34 * Math.sin(cy * 2.35 + cp2) * Math.cos(cz * 2.35 - cp5)
+          fastSin(cx * 1.15 - cp1) * fastCos(cy * 1.15 + cp3) +
+          0.34 * fastSin(cy * 2.35 + cp2) * fastCos(cz * 2.35 - cp5)
 
         const isStrag = pIsStraggler[i]
         const curlAmp = isStrag ? 0.155 : 0.064
@@ -705,7 +772,7 @@
         const ellipRSq = ex * ex + ey * ey + ez * ez
         if (ellipRSq > 0.7396) {
           const ellipR = Math.sqrt(ellipRSq)
-          const compressed = 0.86 + 0.22 * Math.tanh((ellipR - 0.86) * 1.45)
+          const compressed = 0.86 + 0.22 * fastTanh((ellipR - 0.86) * 1.45)
           const ratio = compressed / ellipR
           cx *= ratio
           cy *= ratio
@@ -717,17 +784,20 @@
         const curY = py[i]
         const curZ = pz[i]
         const microAmp = isStrag ? 0.032 : 0.018
-        const tx = cx + Math.sin(curY * 2.4 + t135 + ph) * microAmp
-        const ty = cy + Math.cos(curZ * 2.4 + t122 + ph) * microAmp
-        const tz = cz + Math.sin(curX * 2.4 + t142 + ph) * microAmp
+        const tx = cx + fastSin(curY * 2.4 + t135 + ph) * microAmp
+        const ty = cy + fastCos(curZ * 2.4 + t122 + ph) * microAmp
+        const tz = cz + fastSin(curX * 2.4 + t142 + ph) * microAmp
 
-        const spring = isStrag ? 0.016 : 0.026
-        const damping = isStrag ? 0.905 : 0.888
-        const alignWeight = isStrag ? 0.024 : 0.068
+        const spring = isStrag ? springStrag : springCore
+        const damping = isStrag ? dampStrag : dampCore
+        const alignWeight = isStrag ? alignStrag : alignCore
 
-        let nvx = (vx[i] + (tx - curX) * spring + (flockMeanVx[f] - vx[i]) * alignWeight) * damping
-        let nvy = (vy[i] + (ty - curY) * spring + (flockMeanVy[f] - vy[i]) * alignWeight) * damping
-        let nvz = (vz[i] + (tz - curZ) * spring + (flockMeanVz[f] - vz[i]) * alignWeight) * damping
+        let nvx =
+          (vx[i] + (tx - curX) * spring + (flockMeanVx[f] - vx[i]) * alignWeight) * damping
+        let nvy =
+          (vy[i] + (ty - curY) * spring + (flockMeanVy[f] - vy[i]) * alignWeight) * damping
+        let nvz =
+          (vz[i] + (tz - curZ) * spring + (flockMeanVz[f] - vz[i]) * alignWeight) * damping
 
         const cEx = curX / 1.48
         const cEy = curY / 1.36
@@ -735,7 +805,7 @@
         const cRadSq = cEx * cEx + cEy * cEy + cEz * cEz
         if (cRadSq > 1.0) {
           const cRad = Math.sqrt(cRadSq)
-          const pull = Math.min(0.052, (cRad - 1.0) * 0.026) / cRad
+          const pull = (Math.min(0.052, (cRad - 1.0) * 0.026) * dtScale) / cRad
           nvx -= cEx * pull
           nvy -= cEy * pull
           nvz -= cEz * pull
@@ -758,7 +828,7 @@
           if (distSq < interactRadiusSq && distSq > 0.001) {
             const dist = Math.sqrt(distSq)
             const norm = 1.0 - dist / interactRadius
-            const falloff = norm * norm * pointer.energy
+            const falloff = norm * norm * pointer.energy * dtScale
 
             const nx = dx / dist
             const ny = dy / dist
@@ -770,7 +840,7 @@
 
             const camImpX = nx * repel - ny * swirl + dragX
             const camImpY = ny * repel + nx * swirl + dragY
-            const camImpZ = falloff * 0.022 * Math.sin(ph + t380)
+            const camImpZ = falloff * 0.022 * fastSin(ph + t380)
 
             const iy1 = camImpY * COS_X + camImpZ * SIN_X
             const iz1 = -camImpY * SIN_X + camImpZ * COS_X
@@ -788,9 +858,9 @@
         vy[i] = nvy
         vz[i] = nvz
 
-        const nxPos = curX + nvx
-        const nyPos = curY + nvy
-        const nzPos = curZ + nvz
+        const nxPos = curX + nvx * dtScale
+        const nyPos = curY + nvy * dtScale
+        const nzPos = curZ + nvz * dtScale
         px[i] = nxPos
         py[i] = nyPos
         pz[i] = nzPos
@@ -819,53 +889,46 @@
         }
         if (edgeFade <= 0.015) continue
 
-        projPhysX[i] = (sx * dpr - halfCellPx + 0.5) | 0
-        projPhysY[i] = (sy * dpr - halfCellPx + 0.5) | 0
-
-        const rCss = pBaseRadius[i] * perspective
-        let sIdx = ((rCss - 0.4) * 8.888) | 0
-        if (sIdx < 0) sIdx = 0
-        else if (sIdx >= SIZE_LEVELS) sIdx = SIZE_LEVELS - 1
-        projSizeIdx[i] = sIdx
-
         let depthNorm = (1.55 - z2) / 2.9
         if (depthNorm < 0) depthNorm = 0
         else if (depthNorm > 0.999) depthNorm = 0.999
 
         const combinedOpacity = (0.24 + depthNorm * 0.76) * edgeFade
-        let b = (combinedOpacity * ALPHA_LEVELS) | 0
-        if (b < 0) b = 0
-        else if (b >= ALPHA_LEVELS) b = ALPHA_LEVELS - 1
+        const rCss = pBaseRadius[i] * perspective
 
-        bucketNext[i] = bucketHead[b]
-        bucketHead[b] = i
+        const outIdx = visibleCount * 4
+        gpuData[outIdx] = sx * dpr
+        gpuData[outIdx + 1] = sy * dpr
+        gpuData[outIdx + 2] = Math.max(1.2, rCss * 2.2 * dpr)
+        gpuData[outIdx + 3] = 0.04 + combinedOpacity * 0.9
+        visibleCount++
       }
 
-      for (let b = 0; b < ALPHA_LEVELS; b++) {
-        let idx = bucketHead[b]
-        if (idx === -1) continue
-
-        const srcX = b * cellPx
-        while (idx !== -1) {
-          const srcY = projSizeIdx[idx] * cellPx
-          ctx.drawImage(
-            atlasCanvas,
-            srcX,
-            srcY,
-            cellPx,
-            cellPx,
-            projPhysX[idx],
-            projPhysY[idx],
-            cellPx,
-            cellPx,
-          )
-          idx = bucketNext[idx]
+      if (gl && glProgram && glBuffer) {
+        gl.clear(gl.COLOR_BUFFER_BIT)
+        if (visibleCount > 0) {
+          gl.bindBuffer(gl.ARRAY_BUFFER, glBuffer)
+          gl.bufferSubData(gl.ARRAY_BUFFER, 0, gpuData.subarray(0, visibleCount * 4))
+          gl.drawArrays(gl.POINTS, 0, visibleCount)
+        }
+      } else if (ctx2d) {
+        ctx2d.setTransform(1, 0, 0, 1, 0, 0)
+        ctx2d.fillStyle = isDarkMode ? "#1e1e1e" : "#ffffff"
+        ctx2d.fillRect(0, 0, physWidth, physHeight)
+        const dotRgb = isDarkMode ? "226, 228, 232" : "10, 10, 10"
+        for (let i = 0; i < visibleCount; i++) {
+          const idx = i * 4
+          const sz = gpuData[idx + 2] * 0.5
+          ctx2d.fillStyle = `rgba(${dotRgb},${gpuData[idx + 3].toFixed(2)})`
+          ctx2d.fillRect(gpuData[idx] - sz, gpuData[idx + 1] - sz, sz * 2, sz * 2)
         }
       }
 
       requestAnimationFrame(animate)
     }
 
+    // Keep HALF_PI referenced only if needed; avoid unused var
+    void HALF_PI
     requestAnimationFrame(animate)
   }
 
