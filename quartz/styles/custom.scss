@@ -1,0 +1,723 @@
+@use "./base.scss";
+
+/* ==========================================================================
+   Starling Murmuration + Minimalist Editorial Reader Theme
+   Interface Font: Inter | Body Text Font: Public Sans
+   ========================================================================== */
+
+:root {
+  --bg: #1e1e1e;
+  --drawer-bg: #181818;
+  --text: #dadada;
+  --heading: #ededed;
+  --muted: #999999;
+  --link: #b3b3b3;
+  --folder: #d4d4d4;
+  --border: #333333;
+  --border-subtle: #2b2b2b;
+  --hover-bg: rgba(255, 255, 255, 0.06);
+  --active-bg: rgba(255, 255, 255, 0.1);
+  --surface: #262626;
+  --scrim: rgba(0, 0, 0, 0.5);
+  --ui-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  --body-font: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
+    Arial, sans-serif;
+}
+
+html[data-theme="light"] {
+  --bg: #ffffff;
+  --drawer-bg: #f6f6f6;
+  --text: #111111;
+  --heading: #0a0a0b;
+  --muted: #6e6e73;
+  --link: #52525b;
+  --folder: #27272a;
+  --border: rgba(0, 0, 0, 0.12);
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --hover-bg: rgba(0, 0, 0, 0.045);
+  --active-bg: rgba(0, 0, 0, 0.08);
+  --surface: #fafafa;
+  --scrim: rgba(0, 0, 0, 0.24);
+}
+
+/* Override Quartz base.scss layout when using MurmurationFrame */
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease;
+}
+
+#quartz-root[data-frame="murmuration"] {
+  display: contents;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+}
+
+#quartz-root[data-frame="murmuration"] * {
+  box-sizing: border-box;
+}
+
+/* Seamless 50/50 Desktop Split-Screen Layout (Zero Dividing Borders) */
+.split-container {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  background-color: var(--bg);
+  transition: background-color 0.2s ease;
+}
+
+/* Left 50%: Full-Bleed 3D Starling Murmuration Canvas */
+.canvas-pane {
+  width: 50%;
+  height: 100%;
+  position: relative;
+  background-color: var(--bg);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    background-color 0.2s ease,
+    width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.22s ease;
+}
+
+canvas#swarmCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: pan-y;
+  cursor: default;
+}
+
+/* Right 50%: Minimalist Quartz / Obsidian Editorial Reader Pane */
+.text-pane {
+  width: 50%;
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding: 8vh 7vw 10vh 7vw;
+  background-color: var(--bg);
+  color: var(--text);
+  font-family: var(--body-font);
+  font-weight: 400;
+  font-size: 12pt;
+  line-height: 1.55;
+  text-align: left;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  transition:
+    background-color 0.2s ease,
+    color 0.2s ease,
+    width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Reader Mode: Smoothly Collapse Left 3D Canvas & Center Editorial Column */
+html.reader-mode .canvas-pane {
+  width: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+html.reader-mode .text-pane {
+  width: 100%;
+}
+
+html.reader-mode .quartz-explorer,
+html.reader-mode .quartz-backlinks,
+html.reader-mode .garden-divider {
+  display: none;
+}
+
+/* Centered 60ch Reading Measure */
+.tex-body {
+  width: 100%;
+  max-width: 60ch;
+  margin: 0 auto;
+}
+
+/* Top Utility Bar (Inter Interface Font, Minimal Quartz Style) */
+.utility-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 2.2em;
+  font-family: var(--ui-font);
+}
+
+.utility-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.util-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.util-icon-btn:hover {
+  background: var(--hover-bg);
+  color: var(--heading);
+}
+
+.util-icon-btn.is-active {
+  background: var(--active-bg);
+  color: var(--heading);
+}
+
+.util-icon-btn svg {
+  width: 17px;
+  height: 17px;
+  display: block;
+}
+
+#menuDrawerBtn {
+  width: auto;
+  padding-left: 0;
+  padding-right: 6px;
+  margin-left: 0;
+  justify-content: flex-start;
+}
+
+#menuDrawerBtn svg {
+  width: 18px;
+  height: 18px;
+}
+
+html[data-theme="dark"] .icon-sun {
+  display: none !important;
+}
+
+html[data-theme="light"] .icon-moon {
+  display: none !important;
+}
+
+/* Search Input Box & Navigable Dropdown */
+.search-wrapper {
+  position: relative;
+  font-family: var(--ui-font);
+}
+
+.search-box {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  transition: border-color 0.16s ease;
+}
+
+.search-box:focus-within {
+  border-color: var(--muted);
+}
+
+.search-box svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+
+.search-input {
+  width: 118px;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--ui-font);
+  font-size: 10.5pt;
+  line-height: 1;
+}
+
+.search-input::placeholder {
+  color: var(--muted);
+}
+
+.search-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  width: 240px;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+  z-index: 40;
+  display: none;
+}
+
+.search-dropdown.is-open {
+  display: block;
+}
+
+.search-result-btn {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--ui-font);
+  font-size: 10.5pt;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.14s ease;
+}
+
+.search-result-btn:hover,
+.search-result-btn.is-focused {
+  background: var(--active-bg);
+}
+
+.search-result-folder {
+  font-size: 9pt;
+  color: var(--muted);
+}
+
+.search-empty {
+  padding: 8px 10px;
+  font-size: 10pt;
+  color: var(--muted);
+  font-family: var(--ui-font);
+}
+
+/* Left Slide-Out Sidebar Drawer (Quartz / Obsidian Publish Style) */
+.drawer-backdrop {
+  position: fixed;
+  inset: 0;
+  background: var(--scrim);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.24s ease;
+  z-index: 990;
+}
+
+.drawer-backdrop.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.left-drawer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 33.33vw;
+  background: var(--drawer-bg);
+  border-right: 1px solid var(--border);
+  padding: 28px 32px 36px;
+  overflow-y: auto;
+  transform: translateX(-100%);
+  transition:
+    transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.2s ease;
+  z-index: 1000;
+  font-family: var(--ui-font);
+}
+
+.left-drawer.is-open {
+  transform: translateX(0);
+}
+
+.drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.drawer-title {
+  font-size: 11pt;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+/* Editorial Typography — Headings in Inter, Body in Public Sans (12pt) */
+#pageContent h1,
+.about-heading {
+  font-family: var(--ui-font);
+  font-size: 12pt;
+  font-weight: 600;
+  line-height: 1.55;
+  color: var(--heading);
+  margin: 0 0 1.15em 0;
+}
+
+#pageContent h2,
+#pageContent h3,
+#pageContent h4 {
+  font-family: var(--ui-font);
+  font-size: 12pt;
+  font-weight: 600;
+  line-height: 1.55;
+  color: var(--heading);
+  margin: 1.4em 0 0.7em 0;
+}
+
+#pageContent p {
+  max-width: 60ch;
+  margin: 0 0 1.15em 0;
+  font-family: var(--body-font);
+  font-size: 12pt;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--text);
+  text-align: left;
+  text-indent: 0;
+  -webkit-font-smoothing: antialiased;
+}
+
+#pageContent p:last-child {
+  margin-bottom: 0;
+}
+
+#pageContent ul,
+#pageContent ol {
+  margin: 0 0 1.15em 1.25em;
+  padding: 0;
+  font-family: var(--body-font);
+}
+
+#pageContent li {
+  margin-bottom: 0.45em;
+  font-size: 12pt;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+#pageContent strong {
+  font-weight: 600;
+  color: var(--heading);
+}
+
+#pageContent blockquote {
+  margin: 1.15em 0;
+  padding-left: 1em;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+  font-family: var(--body-font);
+}
+
+#pageContent code {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.9em;
+  background: var(--hover-bg);
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
+}
+
+#pageContent pre {
+  background: var(--surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 12px 14px;
+  overflow-x: auto;
+  margin: 1.15em 0;
+}
+
+#pageContent pre code {
+  background: transparent;
+  padding: 0;
+}
+
+/* Obsidian-Style [[Wikilinks]] & Links */
+#pageContent a.internal,
+#pageContent a.external,
+.wikilink {
+  display: inline;
+  color: rgb(160, 70, 70);
+  background: transparent;
+  padding: 0;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  text-align: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+#pageContent a.internal:hover,
+#pageContent a.external:hover,
+.wikilink:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  opacity: 0.88;
+}
+
+.text-pane .katex {
+  color: var(--text);
+  font-size: 1.06em;
+}
+
+.text-pane .katex-display {
+  margin: 1.4em 0;
+  color: var(--text);
+  font-size: 1.15em;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+#pageContent hr,
+.obsidian-divider {
+  border: none;
+  height: 1px;
+  background: var(--border);
+  margin: 1.15em 0;
+  width: 100%;
+}
+
+/* Quartz / Obsidian Section Labels (Title Case, Muted Neutral, Inter) */
+.garden-label {
+  font-family: var(--ui-font);
+  font-size: 11pt;
+  font-weight: 500;
+  color: var(--muted);
+  margin-bottom: 0.75em;
+}
+
+/* Collapsible Explorer Tree */
+.quartz-explorer {
+  margin-bottom: 2em;
+  border-radius: 8px;
+  font-family: var(--ui-font);
+}
+
+/* Contextual Backlinks Section */
+.quartz-backlinks {
+  margin-bottom: 2em;
+  font-family: var(--ui-font);
+}
+
+.backlinks-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.backlink-btn {
+  width: 100%;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px;
+  margin-left: -8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--link);
+  font-family: var(--ui-font);
+  font-size: 11pt;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.backlink-btn:hover {
+  background: var(--hover-bg);
+  color: var(--heading);
+}
+
+.backlink-path {
+  font-size: 9.5pt;
+  color: var(--muted);
+  flex-shrink: 0;
+}
+
+.is-hidden {
+  display: none !important;
+}
+
+.explorer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.explorer-link {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--link);
+  font-family: var(--ui-font);
+  font-size: 11pt;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.explorer-link:hover {
+  background: var(--hover-bg);
+  color: var(--text);
+}
+
+.explorer-link.is-active {
+  background: var(--active-bg);
+  color: var(--heading);
+  font-weight: 500;
+}
+
+.explorer-folder {
+  margin-top: 2px;
+}
+
+.folder-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--folder);
+  font-family: var(--ui-font);
+  font-size: 11pt;
+  font-weight: 500;
+  line-height: 1.4;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.folder-toggle:hover {
+  background: var(--hover-bg);
+  color: var(--heading);
+}
+
+.folder-chevron {
+  width: 14px;
+  height: 14px;
+  color: var(--muted);
+  flex-shrink: 0;
+  transition: transform 0.18s ease;
+}
+
+.explorer-folder.is-collapsed .folder-chevron {
+  transform: rotate(-90deg);
+}
+
+.folder-children {
+  list-style: none;
+  margin-left: 14px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 2px;
+  margin-bottom: 4px;
+}
+
+.explorer-folder.is-collapsed .folder-children {
+  display: none;
+}
+
+/* Responsive Mobile & Tablet Stacked Layout (<= 860px) */
+@media (max-width: 860px) {
+  html,
+  body {
+    overflow-x: hidden;
+    overflow-y: auto;
+    height: auto;
+  }
+
+  .left-drawer {
+    width: 100vw;
+    border-right: none;
+    padding: 24px 7vw 32px;
+  }
+
+  .split-container {
+    flex-direction: column;
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .canvas-pane {
+    width: 100%;
+    height: 50vh;
+    min-height: 320px;
+  }
+
+  html.reader-mode .canvas-pane {
+    width: 100%;
+    height: 0;
+    min-height: 0;
+  }
+
+  .text-pane {
+    width: 100%;
+    height: auto;
+    overflow-y: visible;
+    display: block;
+    padding: 5vh 7vw 8vh 7vw;
+  }
+
+  .search-input {
+    width: 96px;
+  }
+}
