@@ -85,6 +85,8 @@ body {
   position: relative;
   background-color: var(--bg);
   overflow: hidden;
+  contain: strict;
+  transform: translateZ(0);
   user-select: none;
   -webkit-user-select: none;
   transition:
@@ -97,6 +99,8 @@ canvas#swarmCanvas {
   display: block;
   width: 100%;
   height: 100%;
+  transform: translateZ(0);
+  will-change: contents;
   touch-action: pan-y;
   cursor: default;
 }

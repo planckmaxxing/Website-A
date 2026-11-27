@@ -20,9 +20,10 @@
     const maybeCanvas = document.getElementById("swarmCanvas") as HTMLCanvasElement | null
     if (!maybeCanvas) return
     const canvas = maybeCanvas
-    const maybeCtx = canvas.getContext("2d", { alpha: false })
+    const maybeCtx = canvas.getContext("2d", { alpha: false, desynchronized: true })
     if (!maybeCtx) return
     const ctx = maybeCtx
+    ctx.imageSmoothingEnabled = false
 
     win.__murmurationInitialized = true
 
@@ -101,16 +102,32 @@
       const parent = canvas.parentElement
       if (!parent) return
       const rect = parent.getBoundingClientRect()
-      dpr = Math.min(window.devicePixelRatio || 1, 2)
-      width = Math.max(1, rect.width)
-      height = Math.max(1, rect.height)
-      physWidth = Math.round(width * dpr)
-      physHeight = Math.round(height * dpr)
+      const nextDpr = Math.min(window.devicePixelRatio || 1, 2)
+      const nextWidth = Math.max(1, rect.width)
+      const nextHeight = Math.max(1, rect.height)
+      const nextPhysWidth = Math.round(nextWidth * nextDpr)
+      const nextPhysHeight = Math.round(nextHeight * nextDpr)
+
+      if (
+        nextPhysWidth === physWidth &&
+        nextPhysHeight === physHeight &&
+        nextDpr === dpr &&
+        atlasDpr === nextDpr
+      ) {
+        return
+      }
+
+      dpr = nextDpr
+      width = nextWidth
+      height = nextHeight
+      physWidth = nextPhysWidth
+      physHeight = nextPhysHeight
       canvas.width = physWidth
       canvas.height = physHeight
 
       buildSpriteAtlas(dpr, isDarkMode)
 
+      ctx.imageSmoothingEnabled = false
       ctx.setTransform(1, 0, 0, 1, 0, 0)
       ctx.fillStyle = bgHex
       ctx.fillRect(0, 0, physWidth, physHeight)
@@ -564,6 +581,12 @@
 
     function animate(now: number) {
       if (startTime === 0) startTime = now
+
+      if (document.hidden || width <= 2 || height <= 2) {
+        requestAnimationFrame(animate)
+        return
+      }
+
       const time = (now - startTime) * 0.001
       const phi = (time * OMEGA) % TWO_PI
 
@@ -796,8 +819,8 @@
         }
         if (edgeFade <= 0.015) continue
 
-        projPhysX[i] = sx * dpr - halfCellPx
-        projPhysY[i] = sy * dpr - halfCellPx
+        projPhysX[i] = (sx * dpr - halfCellPx + 0.5) | 0
+        projPhysY[i] = (sy * dpr - halfCellPx + 0.5) | 0
 
         const rCss = pBaseRadius[i] * perspective
         let sIdx = ((rCss - 0.4) * 8.888) | 0

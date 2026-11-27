@@ -4,7 +4,7 @@ configuration:
   pageTitleSuffix: ""
   enableSPA: true
   enablePopovers: true
-  prefetch: viewport
+  prefetch: hover
   locale: en-US
   baseUrl: planckmaxxing.github.io/Website-A
   ignorePatterns:
