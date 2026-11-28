@@ -72,22 +72,21 @@ interface GraphEdge {
     return new URL(targetSlug, root)
   }
 
-  /** Exact CSS cubic-bezier(0.22, 1, 0.36, 1) solver matching page & murmuration theme transitions */
-  function easeOutQuintic(x: number): number {
+  /** Exact CSS cubic-bezier(0.4, 0, 0.2, 1) solver matching page & murmuration theme transitions */
+  function easeStandardBezier(x: number): number {
     if (x <= 0) return 0
     if (x >= 1) return 1
     let t = x
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < 5; i++) {
       const u = 1 - t
-      const cx = 3 * u * u * t * 0.22 + 3 * u * t * t * 0.36 + t * t * t
-      const dx = 3 * u * u * 0.22 + 6 * u * t * (0.36 - 0.22) + 3 * t * t * (1 - 0.36)
+      const cx = 3 * u * u * t * 0.4 + 3 * u * t * t * 0.2 + t * t * t
+      const dx = 3 * u * u * 0.4 + 6 * u * t * (0.2 - 0.4) + 3 * t * t * (1 - 0.2)
       if (Math.abs(dx) < 1e-6) break
       t -= (cx - x) / dx
       if (t < 0) t = 0
       else if (t > 1) t = 1
     }
-    const u = 1 - t
-    return 1 - u * u * u
+    return t * t * (3 - 2 * t)
   }
 
   /** Deterministic hash in [0, 1) for reproducible, jitter-free initial node seeding */
@@ -247,7 +246,6 @@ interface GraphEdge {
     let themeStartBlend = themeBlend
     let targetThemeBlend = themeBlend
     let themeAnimStart = 0
-    const THEME_ANIM_MS = 480
 
     // Interaction state
     let hoveredNode: GraphNode | null = null
@@ -570,12 +568,16 @@ interface GraphEdge {
         if (themeAnimStart === 0) {
           themeBlend = targetThemeBlend
         } else {
-          const p = (now - themeAnimStart) / THEME_ANIM_MS
+          if (themeAnimStart < 0) {
+            themeAnimStart = now
+          }
+          const p = (now - themeAnimStart) / 500
           if (p >= 1) {
             themeBlend = targetThemeBlend
             themeAnimStart = 0
           } else {
-            themeBlend = themeStartBlend + (targetThemeBlend - themeStartBlend) * easeOutQuintic(p)
+            themeBlend =
+              themeStartBlend + (targetThemeBlend - themeStartBlend) * easeStandardBezier(p)
             needsMore = true
           }
         }
@@ -590,7 +592,7 @@ interface GraphEdge {
           zoom = defaultZoom
           camAnimStart = 0
         } else {
-          const e = easeOutQuintic(p)
+          const e = easeStandardBezier(p)
           panX = camAnimFromPanX + (defaultPanX - camAnimFromPanX) * e
           panY = camAnimFromPanY + (defaultPanY - camAnimFromPanY) * e
           zoom = camAnimFromZoom + (defaultZoom - camAnimFromZoom) * e
@@ -920,7 +922,7 @@ interface GraphEdge {
         themeAnimStart = 0
         draw()
       } else {
-        themeAnimStart = performance.now()
+        themeAnimStart = -1
         ensureLoop()
       }
     }

@@ -343,9 +343,8 @@ declare const fetchData: Promise<ContentIndex>
       }
     })
 
-    // --- Dark / Light Theme Toggle (Crash-Proof Synchronized Glide + Soft Radial Wave) ---
-    let rippleEl: HTMLDivElement | null = null
-    let rippleAnim: Animation | null = null
+    // --- Dark / Light Theme Toggle (Synchronized 500ms S-Curve Crossfade Across DOM + WebGL) ---
+    let fadeTimer: number | undefined
 
     if (themeToggleBtn) {
       themeToggleBtn.addEventListener("click", () => {
@@ -354,6 +353,19 @@ declare const fetchData: Promise<ContentIndex>
         const prefersReduced =
           typeof window.matchMedia === "function" &&
           window.matchMedia("(prefers-reduced-motion: reduce)").matches
+
+        if (!prefersReduced) {
+          document.documentElement.classList.add("theme-fading")
+          // Commit transition rules before changing CSS custom properties so every child starts on frame 0
+          void document.documentElement.offsetHeight
+          if (fadeTimer !== undefined) {
+            window.clearTimeout(fadeTimer)
+          }
+          fadeTimer = window.setTimeout(() => {
+            document.documentElement.classList.remove("theme-fading")
+            fadeTimer = undefined
+          }, 580)
+        }
 
         document.documentElement.setAttribute("data-theme", nextTheme)
         document.documentElement.setAttribute("saved-theme", nextTheme)
@@ -364,45 +376,6 @@ declare const fetchData: Promise<ContentIndex>
         document.dispatchEvent(
           new CustomEvent("themechange", { detail: { theme: nextTheme, instant: prefersReduced } }),
         )
-
-        if (!prefersReduced) {
-          if (!rippleEl) {
-            rippleEl = document.createElement("div")
-            rippleEl.className = "theme-ripple"
-            document.body.appendChild(rippleEl)
-          }
-
-          const rect = themeToggleBtn.getBoundingClientRect()
-          const originX = rect.left + rect.width * 0.5
-          const originY = rect.top + rect.height * 0.5
-          const maxRadius = Math.hypot(
-            Math.max(originX, window.innerWidth - originX),
-            Math.max(originY, window.innerHeight - originY),
-          )
-          const targetScale = (maxRadius * 2.2) / 240
-
-          rippleEl.style.left = `${originX}px`
-          rippleEl.style.top = `${originY}px`
-          rippleEl.style.background =
-            nextTheme === "light"
-              ? "radial-gradient(circle, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.12) 42%, transparent 72%)"
-              : "radial-gradient(circle, rgba(20, 20, 22, 0.38) 0%, rgba(20, 20, 22, 0.14) 42%, transparent 72%)"
-
-          if (rippleAnim) {
-            rippleAnim.cancel()
-          }
-          rippleAnim = rippleEl.animate(
-            [
-              { transform: "scale(0.15)", opacity: 1 },
-              { transform: `scale(${targetScale.toFixed(2)})`, opacity: 0 },
-            ],
-            {
-              duration: 560,
-              easing: "cubic-bezier(0.22, 1, 0.36, 1)",
-              fill: "none",
-            },
-          )
-        }
       })
     }
 

@@ -73,20 +73,20 @@ button,
   -webkit-user-select: none;
 }
 
-/* Soft GPU-Composited Radial Wave on Theme Switch (Zero ViewTransition Snapshot Overhead) */
-.theme-ripple {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 240px;
-  height: 240px;
-  margin-left: -120px;
-  margin-top: -120px;
-  border-radius: 50%;
-  pointer-events: none;
-  z-index: 980;
-  opacity: 0;
-  will-change: transform, opacity;
+/* Synchronized Full-Page Theme Crossfade (Every Element Glides in Lockstep with WebGL Canvas) */
+html.theme-fading,
+html.theme-fading *,
+html.theme-fading *::before,
+html.theme-fading *::after {
+  transition-property: background-color, color, border-color, fill, stroke, opacity !important;
+  transition-duration: 500ms !important;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
+html.theme-fading #themeToggleBtn svg {
+  transition-property: transform, opacity, color !important;
+  transition-duration: 460ms !important;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 html,
@@ -99,8 +99,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition:
-    background-color 0.48s cubic-bezier(0.22, 1, 0.36, 1),
-    color 0.48s cubic-bezier(0.22, 1, 0.36, 1);
+    background-color 500ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 500ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Seamless 50/50 Desktop Split-Screen Layout (Zero Dividing Borders) */
@@ -109,7 +109,7 @@ body {
   width: 100vw;
   height: 100vh;
   background-color: var(--bg);
-  transition: background-color 0.48s cubic-bezier(0.22, 1, 0.36, 1);
+  transition: background-color 500ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Left 50%: Full-Bleed 3D Starling Murmuration Canvas */
@@ -123,7 +123,7 @@ body {
   user-select: none;
   -webkit-user-select: none;
   transition:
-    background-color 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 500ms cubic-bezier(0.4, 0, 0.2, 1),
     width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.22s ease;
 }
@@ -163,8 +163,8 @@ canvas#swarmCanvas {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition:
-    background-color 0.48s cubic-bezier(0.22, 1, 0.36, 1),
-    color 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 500ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 500ms cubic-bezier(0.4, 0, 0.2, 1),
     width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 

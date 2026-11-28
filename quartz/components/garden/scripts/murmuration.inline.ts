@@ -301,32 +301,30 @@
     window.addEventListener("resize", resize)
     resize()
 
-    // --- Theme Synchronization (Exact 480ms cubic-bezier(0.22, 1, 0.36, 1) Lockstep with CSS) ---
+    // --- Theme Synchronization (Exact 500ms cubic-bezier(0.4, 0, 0.2, 1) Lockstep with CSS) ---
     let themeBlend = isDarkMode ? 0.0 : 1.0 // 0 = dark (#1e1e1e), 1 = light (#ffffff)
     let themeStartBlend = themeBlend
     let targetThemeBlend = themeBlend
-    let themeAnimStartMs = 0
-    const THEME_ANIM_DURATION_MS = 480
+    let themeAnimStartMs = 0 // 0 = idle, -1 = capture on next rAF
+    const THEME_ANIM_DURATION_MS = 500
     let lastVisibleCount = 0
 
-    // Exact solver for CSS cubic-bezier(0.22, 1, 0.36, 1)
-    function easeOutQuinticBezier(x: number): number {
+    // Exact solver for CSS cubic-bezier(0.4, 0, 0.2, 1) (smooth S-curve)
+    function easeStandardBezier(x: number): number {
       if (x <= 0) return 0
       if (x >= 1) return 1
-      // Newton-Raphson for t given x on P1x=0.22, P2x=0.36
       let t = x
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 5; i++) {
         const u = 1 - t
-        const cx = 3 * u * u * t * 0.22 + 3 * u * t * t * 0.36 + t * t * t
-        const dx = 3 * u * u * 0.22 + 6 * u * t * (0.36 - 0.22) + 3 * t * t * (1 - 0.36)
+        const cx = 3 * u * u * t * 0.4 + 3 * u * t * t * 0.2 + t * t * t
+        const dx = 3 * u * u * 0.4 + 6 * u * t * (0.2 - 0.4) + 3 * t * t * (1 - 0.2)
         if (Math.abs(dx) < 1e-6) break
         t -= (cx - x) / dx
         if (t < 0) t = 0
         else if (t > 1) t = 1
       }
-      const u = 1 - t
-      // P1y=1, P2y=1 -> 3*u^2*t + 3*u*t^2 + t^3 = 1 - u^3
-      return 1 - u * u * u
+      // P1y = 0, P2y = 1 -> y(t) = 3*(1-t)*t^2 + t^3 = t^2 * (3 - 2*t)
+      return t * t * (3 - 2 * t)
     }
 
     function drawFrame(uploadBuffer: boolean) {
@@ -360,8 +358,9 @@
         bucketHead &&
         bucketNext
       ) {
+        const bgC = Math.round(30 + (255 - 30) * themeBlend)
         ctx2d.setTransform(1, 0, 0, 1, 0, 0)
-        ctx2d.fillStyle = bgHex
+        ctx2d.fillStyle = `rgb(${bgC}, ${bgC}, ${bgC})`
         ctx2d.fillRect(0, 0, physWidth, physHeight)
 
         for (let b = 0; b < ALPHA_LEVELS; b++) {
@@ -397,7 +396,7 @@
         themeBlend = targetThemeBlend
         themeAnimStartMs = 0
       } else {
-        themeAnimStartMs = performance.now()
+        themeAnimStartMs = -1
       }
       if (ctx2d) {
         buildSpriteAtlas(dpr, isDarkMode)
@@ -408,7 +407,7 @@
       const custom = e as CustomEvent<{ theme?: string; instant?: boolean }> | undefined
       const dark = readThemeIsDark()
       const instant = Boolean(custom?.detail?.instant)
-      if (dark === isDarkMode && themeBlend === targetThemeBlend) return
+      if (dark === isDarkMode && !instant) return
       applyTheme(dark, instant)
     }
 
@@ -1169,12 +1168,15 @@
         if (themeAnimStartMs === 0) {
           themeBlend = targetThemeBlend
         } else {
+          if (themeAnimStartMs < 0) {
+            themeAnimStartMs = now
+          }
           const progress = (now - themeAnimStartMs) / THEME_ANIM_DURATION_MS
           if (progress >= 1.0) {
             themeBlend = targetThemeBlend
             themeAnimStartMs = 0
           } else {
-            const eased = easeOutQuinticBezier(progress < 0 ? 0 : progress)
+            const eased = easeStandardBezier(progress < 0 ? 0 : progress)
             themeBlend = themeStartBlend + (targetThemeBlend - themeStartBlend) * eased
           }
         }
