@@ -293,92 +293,66 @@ declare const fetchData: Promise<ContentIndex>
       }
     })
 
-    // --- Dark / Light Theme Toggle (Satisfying Circular Reveal via View Transitions API) ---
-    let themeTransitionSeq = 0
+    // --- Dark / Light Theme Toggle (Crash-Proof Synchronized Glide + Soft Radial Wave) ---
+    let rippleEl: HTMLDivElement | null = null
+    let rippleAnim: Animation | null = null
+
     if (themeToggleBtn) {
       themeToggleBtn.addEventListener("click", () => {
         const isDark = document.documentElement.getAttribute("data-theme") !== "light"
         const nextTheme = isDark ? "light" : "dark"
-        const nextIsDark = nextTheme === "dark"
-
-        const applyDomTheme = (instantCanvas: boolean) => {
-          document.documentElement.setAttribute("data-theme", nextTheme)
-          document.documentElement.setAttribute("saved-theme", nextTheme)
-          try {
-            localStorage.setItem("starling-garden-theme", nextTheme)
-          } catch {}
-          const syncFn = (
-            window as unknown as {
-              __murmurationSyncTheme?: (dark: boolean, instant: boolean) => void
-            }
-          ).__murmurationSyncTheme
-          if (syncFn) {
-            syncFn(nextIsDark, instantCanvas)
-          }
-          document.dispatchEvent(
-            new CustomEvent("themechange", { detail: { theme: nextTheme, instant: instantCanvas } }),
-          )
-        }
-
         const prefersReduced =
           typeof window.matchMedia === "function" &&
           window.matchMedia("(prefers-reduced-motion: reduce)").matches
 
-        const startVT = (
-          document as Document & {
-            startViewTransition?: (cb: () => void) => {
-              ready: Promise<void>
-              finished: Promise<void>
-            }
-          }
-        ).startViewTransition
+        document.documentElement.setAttribute("data-theme", nextTheme)
+        document.documentElement.setAttribute("saved-theme", nextTheme)
+        try {
+          localStorage.setItem("starling-garden-theme", nextTheme)
+        } catch {}
 
-        if (prefersReduced || typeof startVT !== "function") {
-          applyDomTheme(prefersReduced)
-          return
-        }
-
-        const rect = themeToggleBtn.getBoundingClientRect()
-        const originX = rect.left + rect.width * 0.5
-        const originY = rect.top + rect.height * 0.5
-        const maxRadius = Math.hypot(
-          Math.max(originX, window.innerWidth - originX),
-          Math.max(originY, window.innerHeight - originY),
+        document.dispatchEvent(
+          new CustomEvent("themechange", { detail: { theme: nextTheme, instant: prefersReduced } }),
         )
 
-        const seq = ++themeTransitionSeq
-        document.documentElement.classList.add("theme-transitioning")
+        if (!prefersReduced) {
+          if (!rippleEl) {
+            rippleEl = document.createElement("div")
+            rippleEl.className = "theme-ripple"
+            document.body.appendChild(rippleEl)
+          }
 
-        const transition = startVT.call(document, () => {
-          applyDomTheme(true)
-        })
+          const rect = themeToggleBtn.getBoundingClientRect()
+          const originX = rect.left + rect.width * 0.5
+          const originY = rect.top + rect.height * 0.5
+          const maxRadius = Math.hypot(
+            Math.max(originX, window.innerWidth - originX),
+            Math.max(originY, window.innerHeight - originY),
+          )
+          const targetScale = (maxRadius * 2.2) / 240
 
-        transition.ready
-          .then(() => {
-            document.documentElement.animate(
-              {
-                clipPath: [
-                  `circle(0px at ${originX}px ${originY}px)`,
-                  `circle(${maxRadius}px at ${originX}px ${originY}px)`,
-                ],
-              },
-              {
-                duration: 620,
-                easing: "cubic-bezier(0.4, 0, 0.2, 1)",
-                fill: "both",
-                pseudoElement: "::view-transition-new(root)",
-              },
-            )
-          })
-          .catch(() => {})
+          rippleEl.style.left = `${originX}px`
+          rippleEl.style.top = `${originY}px`
+          rippleEl.style.background =
+            nextTheme === "light"
+              ? "radial-gradient(circle, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0.12) 42%, transparent 72%)"
+              : "radial-gradient(circle, rgba(20, 20, 22, 0.38) 0%, rgba(20, 20, 22, 0.14) 42%, transparent 72%)"
 
-        transition.finished
-          .finally(() => {
-            if (seq === themeTransitionSeq) {
-              document.documentElement.classList.remove("theme-transitioning")
-            }
-          })
-          .catch(() => {})
+          if (rippleAnim) {
+            rippleAnim.cancel()
+          }
+          rippleAnim = rippleEl.animate(
+            [
+              { transform: "scale(0.15)", opacity: 1 },
+              { transform: `scale(${targetScale.toFixed(2)})`, opacity: 0 },
+            ],
+            {
+              duration: 560,
+              easing: "cubic-bezier(0.22, 1, 0.36, 1)",
+              fill: "none",
+            },
+          )
+        }
       })
     }
 

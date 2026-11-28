@@ -301,15 +301,37 @@
     window.addEventListener("resize", resize)
     resize()
 
-    // --- Theme Synchronization (Instant for View Transitions, Smooth Lerp Fallback) ---
+    // --- Theme Synchronization (Exact 480ms cubic-bezier(0.22, 1, 0.36, 1) Lockstep with CSS) ---
     let themeBlend = isDarkMode ? 0.0 : 1.0 // 0 = dark (#1e1e1e), 1 = light (#ffffff)
+    let themeStartBlend = themeBlend
     let targetThemeBlend = themeBlend
+    let themeAnimStartMs = 0
+    const THEME_ANIM_DURATION_MS = 480
     let lastVisibleCount = 0
+
+    // Exact solver for CSS cubic-bezier(0.22, 1, 0.36, 1)
+    function easeOutQuinticBezier(x: number): number {
+      if (x <= 0) return 0
+      if (x >= 1) return 1
+      // Newton-Raphson for t given x on P1x=0.22, P2x=0.36
+      let t = x
+      for (let i = 0; i < 4; i++) {
+        const u = 1 - t
+        const cx = 3 * u * u * t * 0.22 + 3 * u * t * t * 0.36 + t * t * t
+        const dx = 3 * u * u * 0.22 + 6 * u * t * (0.36 - 0.22) + 3 * t * t * (1 - 0.36)
+        if (Math.abs(dx) < 1e-6) break
+        t -= (cx - x) / dx
+        if (t < 0) t = 0
+        else if (t > 1) t = 1
+      }
+      const u = 1 - t
+      // P1y=1, P2y=1 -> 3*u^2*t + 3*u*t^2 + t^3 = 1 - u^3
+      return 1 - u * u * u
+    }
 
     function drawFrame(uploadBuffer: boolean) {
       const useGL = Boolean(gl && !contextLost)
       if (useGL && gl && glProgram && glBuffer) {
-        // Smooth ease-in-out blend between dark (#1e1e1e, dots 226/228/232) and light (#ffffff, dots 10/10/10)
         const t = themeBlend
         const bgVal = (30 + (255 - 30) * t) / 255
         gl.clearColor(bgVal, bgVal, bgVal, 1.0)
@@ -369,26 +391,24 @@
     function applyTheme(dark: boolean, instant: boolean) {
       isDarkMode = dark
       bgHex = isDarkMode ? "#1e1e1e" : "#ffffff"
+      themeStartBlend = themeBlend
       targetThemeBlend = isDarkMode ? 0.0 : 1.0
       if (instant) {
         themeBlend = targetThemeBlend
+        themeAnimStartMs = 0
+      } else {
+        themeAnimStartMs = performance.now()
       }
       if (ctx2d) {
         buildSpriteAtlas(dpr, isDarkMode)
       }
-      if (instant && shouldRun()) {
-        drawFrame(false)
-      }
     }
-
-    ;(window as unknown as { __murmurationSyncTheme?: (dark: boolean, instant: boolean) => void })
-      .__murmurationSyncTheme = applyTheme
 
     function syncThemeFromEvent(e?: Event) {
       const custom = e as CustomEvent<{ theme?: string; instant?: boolean }> | undefined
       const dark = readThemeIsDark()
       const instant = Boolean(custom?.detail?.instant)
-      if (dark === isDarkMode && (!instant || themeBlend === targetThemeBlend)) return
+      if (dark === isDarkMode && themeBlend === targetThemeBlend) return
       applyTheme(dark, instant)
     }
 
@@ -1146,9 +1166,18 @@
       }
 
       if (themeBlend !== targetThemeBlend) {
-        const diff = targetThemeBlend - themeBlend
-        const alphaStep = 1.0 - Math.exp(-dt * 9.5)
-        themeBlend = Math.abs(diff) < 0.002 ? targetThemeBlend : themeBlend + diff * alphaStep
+        if (themeAnimStartMs === 0) {
+          themeBlend = targetThemeBlend
+        } else {
+          const progress = (now - themeAnimStartMs) / THEME_ANIM_DURATION_MS
+          if (progress >= 1.0) {
+            themeBlend = targetThemeBlend
+            themeAnimStartMs = 0
+          } else {
+            const eased = easeOutQuinticBezier(progress < 0 ? 0 : progress)
+            themeBlend = themeStartBlend + (targetThemeBlend - themeStartBlend) * eased
+          }
+        }
       }
 
       lastVisibleCount = visibleCount
