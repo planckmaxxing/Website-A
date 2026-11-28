@@ -10,3 +10,5 @@ $$
 $$
 
 Under metric coupling, a sudden predatory strike or shear gust that expands inter-bird spacing can fracture the flock into disconnected sub-clusters. Topological coupling is invariant under isotropic rescaling, preserving graph connectivity across rapid density compressions and dilations while supporting [[Scale-Free Correlations|scale-free correlations]].
+
+![[content/notes/art002e009567~large.jpg]]
