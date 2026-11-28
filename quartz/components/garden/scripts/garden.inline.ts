@@ -106,6 +106,10 @@ declare const fetchData: Promise<ContentIndex>
         link.classList.toggle("is-active", linkSlug === currentSlug)
         link.setAttribute("href", resolveRelative(currentSlug, linkSlug))
       })
+      const homeBtn = document.getElementById("homeBtn") as HTMLAnchorElement | null
+      if (homeBtn) {
+        homeBtn.setAttribute("href", resolveRelative(currentSlug, "index" as FullSlug))
+      }
     }
 
     // Delegated folder toggle click handler across both Drawer and Bottom Explorer
