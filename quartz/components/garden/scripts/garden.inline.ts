@@ -374,9 +374,7 @@ declare const fetchData: Promise<ContentIndex>
       }
     })
 
-    // --- Dark / Light Theme Toggle (Synchronized 500ms S-Curve Crossfade Across DOM + WebGL) ---
-    let fadeTimer: number | undefined
-
+    // --- Dark / Light Theme Toggle (Zero-Stall Unified Background + 360ms S-Curve Sync) ---
     if (themeToggleBtn) {
       themeToggleBtn.addEventListener("click", () => {
         const isDark = document.documentElement.getAttribute("data-theme") !== "light"
@@ -384,19 +382,6 @@ declare const fetchData: Promise<ContentIndex>
         const prefersReduced =
           typeof window.matchMedia === "function" &&
           window.matchMedia("(prefers-reduced-motion: reduce)").matches
-
-        if (!prefersReduced) {
-          document.documentElement.classList.add("theme-fading")
-          // Commit transition rules before changing CSS custom properties so every child starts on frame 0
-          void document.documentElement.offsetHeight
-          if (fadeTimer !== undefined) {
-            window.clearTimeout(fadeTimer)
-          }
-          fadeTimer = window.setTimeout(() => {
-            document.documentElement.classList.remove("theme-fading")
-            fadeTimer = undefined
-          }, 580)
-        }
 
         document.documentElement.setAttribute("data-theme", nextTheme)
         document.documentElement.setAttribute("saved-theme", nextTheme)

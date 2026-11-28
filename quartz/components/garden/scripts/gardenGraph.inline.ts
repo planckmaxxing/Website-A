@@ -40,8 +40,13 @@ interface GraphEdge {
   if (win.__gardenGraphInitialized) return
   win.__gardenGraphInitialized = true
 
-  let activeDestroy: (() => void) | null = null
-  let modalDestroy: (() => void) | null = null
+  interface GraphController {
+    destroy: () => void
+    zoomBy: (factor: number) => void
+  }
+
+  let activeController: GraphController | null = null
+  let modalController: GraphController | null = null
 
   function normalizeSlug(raw: string): FullSlug {
     const clean = raw.replace(/^\/+|\/+$/g, "")
@@ -217,10 +222,11 @@ interface GraphEdge {
     edges: GraphEdge[],
     currentSlug: FullSlug,
     mode: "global" | "local",
+    isModal: boolean,
     onNavigate?: () => void,
-  ): () => void {
+  ): GraphController {
     const ctx = canvas.getContext("2d")
-    if (!ctx) return () => {}
+    if (!ctx) return { destroy: () => {}, zoomBy: () => {} }
 
     let width = 300
     let height = 260
@@ -234,12 +240,15 @@ interface GraphEdge {
     let defaultPanY = 0
     let defaultZoom = 1.0
 
-    // Smooth camera reset animation (double-click background)
+    // Smooth camera animation (double-click reset or +/- zoom buttons)
     let camAnimStart = 0
     let camAnimFromPanX = 0
     let camAnimFromPanY = 0
     let camAnimFromZoom = 1.0
-    const CAM_RESET_MS = 340
+    let camAnimToPanX = 0
+    let camAnimToPanY = 0
+    let camAnimToZoom = 1.0
+    const CAM_ANIM_MS = 280
 
     // Synchronized theme color blend [0 = dark, 1 = light]
     let themeBlend = isDark() ? 0.0 : 1.0
@@ -257,7 +266,6 @@ interface GraphEdge {
     let lastX = 0
     let lastY = 0
     let movedDist = 0
-    const DRAG_DEADZONE = 4
 
     // Multi-touch pinch zoom tracking
     const activePointers = new Map<number, { x: number; y: number }>()
@@ -271,11 +279,11 @@ interface GraphEdge {
       adj.get(e.target)!.add(e.source)
     }
 
-    // D3/Obsidian-style cooling simulation
+    // D3/Obsidian-style elastic cooling simulation
     let alpha = 1.0
     let alphaTarget = 0.0
-    const alphaDecay = 0.028
-    const velocityDecay = 0.62 // Obsidian-like damped fluid spring motion
+    const alphaDecay = 0.026
+    const velocityDecay = 0.72
 
     let rafId = 0
     let lastFrameMs = 0
@@ -289,6 +297,11 @@ interface GraphEdge {
       return n.isCurrent ? Math.max(base, 5.2) : base
     }
 
+    function worldNodeRadius(n: GraphNode): number {
+      // Match Obsidian: nodes grow sub-linearly when zooming in instead of turning into oversized circles
+      return zoom > 1 ? nodeRadius(n) / Math.pow(zoom, 0.48) : nodeRadius(n)
+    }
+
     function screenToWorld(sx: number, sy: number): [number, number] {
       return [(sx - width * 0.5 - panX) / zoom, (sy - height * 0.5 - panY) / zoom]
     }
@@ -299,7 +312,7 @@ interface GraphEdge {
       let bestDistSq = Infinity
       for (let i = nodes.length - 1; i >= 0; i--) {
         const n = nodes[i]
-        const hitR = nodeRadius(n) + 7 / Math.max(0.6, zoom)
+        const hitR = worldNodeRadius(n) + 7 / Math.max(0.6, zoom)
         const dx = wx - n.x
         const dy = wy - n.y
         const d2 = dx * dx + dy * dy
@@ -318,9 +331,9 @@ interface GraphEdge {
       const isLarge = width > 560
       const chargeStrength = isLarge ? 3200 : mode === "local" ? 2100 : 1850
       const linkDist = isLarge ? 128 : mode === "local" ? 96 : 94
-      const linkStrength = 0.14
-      const centerXStrength = 0.012
-      const centerYStrength = isLarge ? 0.014 : 0.022
+      const linkStrength = draggingNode ? 0.24 : 0.16
+      const centerXStrength = draggingNode ? 0.006 : 0.012
+      const centerYStrength = draggingNode ? 0.008 : isLarge ? 0.014 : 0.022
 
       // 1. Repel force (Coulomb charge, slightly stronger for hubs so clusters open cleanly)
       for (let i = 0; i < nCount; i++) {
@@ -465,7 +478,8 @@ interface GraphEdge {
       const brightNodeG = Math.round(228 + (24 - 228) * t)
       const brightNodeB = Math.round(230 + (26 - 230) * t)
 
-      const edgeRgb = t < 0.5 ? "255, 255, 255" : "0, 0, 0"
+      const edgeC = Math.round(255 * (1 - t))
+      const edgeRgb = `${edgeC}, ${edgeC}, ${edgeC}`
       const edgeBaseAlpha = 0.14
       const labelR = Math.round(218 + (17 - 218) * t)
       const labelG = Math.round(218 + (17 - 218) * t)
@@ -505,7 +519,7 @@ interface GraphEdge {
         const h = n.highlight
         const d = n.dim
 
-        const r = nodeRadius(n) * (1 + (isPrimaryFocus ? 0.24 : h * 0.08))
+        const r = worldNodeRadius(n) * (1 + (isPrimaryFocus ? 0.24 : h * 0.08))
 
         // Subtle Obsidian halo ring on directly hovered/dragged node
         if (n.hoverLabel > 0.02) {
@@ -551,7 +565,7 @@ interface GraphEdge {
           const labelAlpha = Math.max(n.hoverLabel * 0.96, baseZoomAlpha)
           if (labelAlpha <= 0.01) continue
 
-          const labelY = n.y + nodeRadius(n) + 5 / zoom
+          const labelY = n.y + worldNodeRadius(n) + 5 / zoom
           ctx.fillStyle = `rgba(${labelR}, ${labelG}, ${labelB}, ${labelAlpha.toFixed(3)})`
           ctx.fillText(n.title, n.x, labelY)
         }
@@ -563,7 +577,7 @@ interface GraphEdge {
     function updateVisualTransitions(now: number, dtSec: number): boolean {
       let needsMore = false
 
-      // Smooth theme color interpolation
+      // Smooth theme color interpolation (360ms lockstep with CSS + murmuration)
       if (themeBlend !== targetThemeBlend) {
         if (themeAnimStart === 0) {
           themeBlend = targetThemeBlend
@@ -571,7 +585,7 @@ interface GraphEdge {
           if (themeAnimStart < 0) {
             themeAnimStart = now
           }
-          const p = (now - themeAnimStart) / 500
+          const p = (now - themeAnimStart) / 360
           if (p >= 1) {
             themeBlend = targetThemeBlend
             themeAnimStart = 0
@@ -583,19 +597,19 @@ interface GraphEdge {
         }
       }
 
-      // Smooth double-click camera reset animation
+      // Smooth camera animation (double-click reset or +/- zoom buttons)
       if (camAnimStart > 0) {
-        const p = (now - camAnimStart) / CAM_RESET_MS
+        const p = (now - camAnimStart) / CAM_ANIM_MS
         if (p >= 1) {
-          panX = defaultPanX
-          panY = defaultPanY
-          zoom = defaultZoom
+          panX = camAnimToPanX
+          panY = camAnimToPanY
+          zoom = camAnimToZoom
           camAnimStart = 0
         } else {
           const e = easeStandardBezier(p)
-          panX = camAnimFromPanX + (defaultPanX - camAnimFromPanX) * e
-          panY = camAnimFromPanY + (defaultPanY - camAnimFromPanY) * e
-          zoom = camAnimFromZoom + (defaultZoom - camAnimFromZoom) * e
+          panX = camAnimFromPanX + (camAnimToPanX - camAnimFromPanX) * e
+          panY = camAnimFromPanY + (camAnimToPanY - camAnimFromPanY) * e
+          zoom = camAnimFromZoom + (camAnimToZoom - camAnimFromZoom) * e
           needsMore = true
         }
       }
@@ -736,11 +750,9 @@ interface GraphEdge {
       const [sx, sy] = getLocalCoords(e)
       activePointers.set(e.pointerId, { x: sx, y: sy })
 
-      // Cancel camera reset animation on user input
       camAnimStart = 0
 
       if (activePointers.size === 2) {
-        // Switch smoothly into 2-finger pinch zoom
         pressedNode = null
         draggingNode = null
         isPanning = false
@@ -762,14 +774,18 @@ interface GraphEdge {
         hoveredNode = hit
         canvas.style.cursor = "pointer"
         ensureLoop()
-      } else {
+        try {
+          canvas.setPointerCapture(e.pointerId)
+        } catch {}
+      } else if (e.pointerType === "mouse" || isModal) {
+        // On mobile inline graph, touching empty background lets the page scroll vertically freely;
+        // desktop mouse and full-screen modal pan freely on background drag.
         isPanning = true
         canvas.style.cursor = "grabbing"
+        try {
+          canvas.setPointerCapture(e.pointerId)
+        } catch {}
       }
-
-      try {
-        canvas.setPointerCapture(e.pointerId)
-      } catch {}
     }
 
     function onPointerMove(e: PointerEvent) {
@@ -803,11 +819,12 @@ interface GraphEdge {
       lastY = sy
       movedDist = Math.hypot(sx - downX, sy - downY)
 
-      // Engage node drag only after crossing click deadzone so clicks never nudge nodes
-      if (pressedNode && !draggingNode && movedDist >= DRAG_DEADZONE) {
+      const deadzone = e.pointerType === "touch" ? 10 : 5
+
+      if (pressedNode && !draggingNode && movedDist >= deadzone) {
         draggingNode = pressedNode
-        alphaTarget = 0.28
-        alpha = Math.max(alpha, 0.35)
+        alphaTarget = 0.42
+        alpha = Math.max(alpha, 0.45)
         canvas.style.cursor = "grabbing"
         ensureLoop()
       }
@@ -827,12 +844,13 @@ interface GraphEdge {
         return
       }
 
-      // Hover detection
-      const hit = hitTest(sx, sy)
-      if (hit !== hoveredNode) {
-        hoveredNode = hit
-        canvas.style.cursor = hoveredNode ? "pointer" : "grab"
-        ensureLoop()
+      if (e.pointerType === "mouse") {
+        const hit = hitTest(sx, sy)
+        if (hit !== hoveredNode) {
+          hoveredNode = hit
+          canvas.style.cursor = hoveredNode ? "pointer" : "grab"
+          ensureLoop()
+        }
       }
     }
 
@@ -842,7 +860,9 @@ interface GraphEdge {
         lastPinchDist = 0
       }
 
-      const clickedNode = pressedNode && !draggingNode && movedDist < DRAG_DEADZONE ? pressedNode : null
+      const deadzone = e.pointerType === "touch" ? 10 : 5
+      const clickedNode =
+        pressedNode && !draggingNode && movedDist < deadzone ? pressedNode : null
       const wasDragging = draggingNode !== null
 
       pressedNode = null
@@ -873,7 +893,7 @@ interface GraphEdge {
       }
 
       if (wasDragging) {
-        alpha = Math.max(alpha, 0.22)
+        alpha = Math.max(alpha, 0.28)
       }
       ensureLoop()
     }
@@ -886,22 +906,36 @@ interface GraphEdge {
       }
     }
 
-    function onDoubleClick(e: MouseEvent) {
-      const [sx, sy] = getLocalCoords(e)
-      if (hitTest(sx, sy)) return
-      // Smoothly reset pan & zoom back to fitted default view
+    function animateCameraTo(targetPanX: number, targetPanY: number, targetZoom: number) {
       camAnimFromPanX = panX
       camAnimFromPanY = panY
       camAnimFromZoom = zoom
+      camAnimToPanX = targetPanX
+      camAnimToPanY = targetPanY
+      camAnimToZoom = targetZoom
       camAnimStart = performance.now()
       ensureLoop()
+    }
+
+    function zoomBy(factor: number) {
+      const baseZoom = camAnimStart > 0 ? camAnimToZoom : zoom
+      const basePanX = camAnimStart > 0 ? camAnimToPanX : panX
+      const basePanY = camAnimStart > 0 ? camAnimToPanY : panY
+      const nextZoom = Math.max(0.28, Math.min(4.5, baseZoom * factor))
+      const ratio = nextZoom / baseZoom
+      animateCameraTo(basePanX * ratio, basePanY * ratio, nextZoom)
+    }
+
+    function onDoubleClick(e: MouseEvent) {
+      const [sx, sy] = getLocalCoords(e)
+      if (hitTest(sx, sy)) return
+      animateCameraTo(defaultPanX, defaultPanY, defaultZoom)
     }
 
     function onWheel(e: WheelEvent) {
       e.preventDefault()
       camAnimStart = 0
       const [sx, sy] = getLocalCoords(e)
-      // Smooth exponential zoom proportional to deltaY (handles both trackpads & mouse wheels smoothly)
       const unitScale = e.deltaMode === 1 ? 18 : e.deltaMode === 2 ? 120 : 1
       const clampedDelta = Math.max(-120, Math.min(120, e.deltaY * unitScale))
       const factor = Math.exp(-clampedDelta * 0.0024)
@@ -946,19 +980,22 @@ interface GraphEdge {
 
     resize()
 
-    return () => {
-      destroyed = true
-      if (rafId !== 0) cancelAnimationFrame(rafId)
-      canvas.removeEventListener("pointerdown", onPointerDown)
-      canvas.removeEventListener("pointermove", onPointerMove)
-      canvas.removeEventListener("pointerup", onPointerUp)
-      canvas.removeEventListener("pointercancel", onPointerUp)
-      canvas.removeEventListener("pointerleave", onPointerLeave)
-      canvas.removeEventListener("dblclick", onDoubleClick)
-      canvas.removeEventListener("wheel", onWheel)
-      document.removeEventListener("themechange", onTheme)
-      window.removeEventListener("resize", resize)
-      ro?.disconnect()
+    return {
+      zoomBy,
+      destroy: () => {
+        destroyed = true
+        if (rafId !== 0) cancelAnimationFrame(rafId)
+        canvas.removeEventListener("pointerdown", onPointerDown)
+        canvas.removeEventListener("pointermove", onPointerMove)
+        canvas.removeEventListener("pointerup", onPointerUp)
+        canvas.removeEventListener("pointercancel", onPointerUp)
+        canvas.removeEventListener("pointerleave", onPointerLeave)
+        canvas.removeEventListener("dblclick", onDoubleClick)
+        canvas.removeEventListener("wheel", onWheel)
+        document.removeEventListener("themechange", onTheme)
+        window.removeEventListener("resize", resize)
+        ro?.disconnect()
+      },
     }
   }
 
@@ -968,9 +1005,9 @@ interface GraphEdge {
       modal.classList.remove("is-open")
       modal.setAttribute("aria-hidden", "true")
     }
-    if (modalDestroy) {
-      modalDestroy()
-      modalDestroy = null
+    if (modalController) {
+      modalController.destroy()
+      modalController = null
     }
   }
 
@@ -986,12 +1023,25 @@ interface GraphEdge {
         <div class="graph-modal-panel" role="dialog" aria-label="Global Graph View">
           <div class="graph-modal-header">
             <span class="drawer-title">Graph View</span>
-            <button type="button" class="util-icon-btn" data-close-graph aria-label="Close Graph View" title="Close">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
-                <line x1="18" y1="6" x2="6" y2="18" />
-                <line x1="6" y1="6" x2="18" y2="18" />
-              </svg>
-            </button>
+            <div class="graph-actions">
+              <button type="button" class="util-icon-btn graph-action-btn" data-modal-zoom="out" aria-label="Zoom out graph" title="Zoom out">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+              <button type="button" class="util-icon-btn graph-action-btn" data-modal-zoom="in" aria-label="Zoom in graph" title="Zoom in">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+              </button>
+              <button type="button" class="util-icon-btn" data-close-graph aria-label="Close Graph View" title="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
+              </button>
+            </div>
           </div>
           <div class="graph-modal-body">
             <canvas class="graph-canvas" id="gardenGraphModalCanvas"></canvas>
@@ -1002,6 +1052,11 @@ interface GraphEdge {
         const target = e.target as HTMLElement | null
         if (target?.closest("[data-close-graph]")) {
           closeModal()
+          return
+        }
+        const zoomBtn = target?.closest<HTMLElement>("[data-modal-zoom]")
+        if (zoomBtn && modalController) {
+          modalController.zoomBy(zoomBtn.dataset.modalZoom === "in" ? 1.35 : 1 / 1.35)
         }
       })
       document.body.appendChild(modal)
@@ -1013,25 +1068,25 @@ interface GraphEdge {
     modal.classList.add("is-open")
     modal.setAttribute("aria-hidden", "false")
 
-    if (modalDestroy) {
-      modalDestroy()
-      modalDestroy = null
+    if (modalController) {
+      modalController.destroy()
+      modalController = null
     }
 
     try {
       const index = await fetchData
       const currentSlug = normalizeSlug(document.body.dataset.slug || "index")
       const { nodes, edges } = buildGraphData(index, currentSlug, "global")
-      modalDestroy = mountGraph(canvas, nodes, edges, currentSlug, "global", closeModal)
+      modalController = mountGraph(canvas, nodes, edges, currentSlug, "global", true, closeModal)
     } catch (err) {
       console.error("Failed to render modal graph:", err)
     }
   }
 
   async function renderSectionGraph() {
-    if (activeDestroy) {
-      activeDestroy()
-      activeDestroy = null
+    if (activeController) {
+      activeController.destroy()
+      activeController = null
     }
     closeModal()
 
@@ -1046,7 +1101,7 @@ interface GraphEdge {
       const index = await fetchData
       if (!document.body.contains(canvas)) return
       const { nodes, edges } = buildGraphData(index, currentSlug, mode)
-      activeDestroy = mountGraph(canvas, nodes, edges, currentSlug, mode)
+      activeController = mountGraph(canvas, nodes, edges, currentSlug, mode, false)
     } catch (err) {
       console.error("Failed to render graph:", err)
     }
@@ -1056,6 +1111,10 @@ interface GraphEdge {
     const target = e.target as HTMLElement | null
     if (target?.closest("#graphExpandBtn")) {
       openGlobalModal()
+    } else if (target?.closest("#graphZoomInBtn")) {
+      activeController?.zoomBy(1.35)
+    } else if (target?.closest("#graphZoomOutBtn")) {
+      activeController?.zoomBy(1 / 1.35)
     }
   })
 

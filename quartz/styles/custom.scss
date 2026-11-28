@@ -73,22 +73,7 @@ button,
   -webkit-user-select: none;
 }
 
-/* Synchronized Full-Page Theme Crossfade (Every Element Glides in Lockstep with WebGL Canvas) */
-html.theme-fading,
-html.theme-fading *,
-html.theme-fading *::before,
-html.theme-fading *::after {
-  transition-property: background-color, color, border-color, fill, stroke, opacity !important;
-  transition-duration: 500ms !important;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
-}
-
-html.theme-fading #themeToggleBtn svg {
-  transition-property: transform, opacity, color !important;
-  transition-duration: 460ms !important;
-  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1) !important;
-}
-
+/* Single Unified Surface Background — Zero Split-Line Seam Possible */
 html,
 body {
   width: 100%;
@@ -99,8 +84,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition:
-    background-color 500ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 500ms cubic-bezier(0.4, 0, 0.2, 1);
+    background-color 360ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 360ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 /* Seamless 50/50 Desktop Split-Screen Layout (Zero Dividing Borders) */
@@ -108,22 +93,20 @@ body {
   display: flex;
   width: 100vw;
   height: 100vh;
-  background-color: var(--bg);
-  transition: background-color 500ms cubic-bezier(0.4, 0, 0.2, 1);
+  background-color: transparent;
 }
 
-/* Left 50%: Full-Bleed 3D Starling Murmuration Canvas */
+/* Left 50%: Full-Bleed Transparent 3D Starling Murmuration Canvas */
 .canvas-pane {
   width: 50%;
   height: 100%;
   position: relative;
-  background-color: var(--bg);
+  background-color: transparent;
   overflow: hidden;
   contain: strict;
   user-select: none;
   -webkit-user-select: none;
   transition:
-    background-color 500ms cubic-bezier(0.4, 0, 0.2, 1),
     width 0.28s cubic-bezier(0.22, 1, 0.36, 1),
     opacity 0.22s ease;
 }
@@ -132,6 +115,7 @@ canvas#swarmCanvas {
   display: block;
   width: 100%;
   height: 100%;
+  background-color: transparent;
   /* Preserve smooth vertical page scrolling on mobile while tracking localized touch wake */
   touch-action: pan-y;
   cursor: default;
@@ -145,7 +129,7 @@ canvas#swarmCanvas {
   display: flex;
   flex-direction: column;
   padding: 8vh 7vw 10vh 7vw;
-  background-color: var(--bg);
+  background-color: transparent;
   color: var(--text);
   font-family:
     "Inter",
@@ -163,8 +147,7 @@ canvas#swarmCanvas {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition:
-    background-color 500ms cubic-bezier(0.4, 0, 0.2, 1),
-    color 500ms cubic-bezier(0.4, 0, 0.2, 1),
+    color 360ms cubic-bezier(0.4, 0, 0.2, 1),
     width 0.28s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -911,6 +894,27 @@ html[data-theme="light"] #themeToggleBtn .icon-moon {
   border-radius: 3px;
 }
 
+/* Lightweight Explicit Theme Transitions (No Wildcard * Overhead) */
+.about-heading,
+#pageContent h1,
+#pageContent h2,
+#pageContent h3,
+.text-pane p,
+#pageContent li,
+#pageContent strong,
+.garden-label,
+.text-pane .katex {
+  transition: color 360ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.obsidian-divider {
+  transition: background-color 360ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.folder-children {
+  transition: border-color 360ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 /* Obsidian-Style Interactive Graph View (Global on Landing, Local on Notes) */
 .quartz-graph {
   margin-bottom: 2em;
@@ -927,11 +931,19 @@ html[data-theme="light"] #themeToggleBtn .icon-moon {
   margin-bottom: 0;
 }
 
+.graph-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.graph-action-btn,
 .graph-expand-btn {
   width: 26px;
   height: 26px;
 }
 
+.graph-action-btn svg,
 .graph-expand-btn svg {
   width: 14px;
   height: 14px;
@@ -951,6 +963,11 @@ html[data-theme="light"] #themeToggleBtn .icon-moon {
   display: block;
   width: 100%;
   height: 100%;
+  /* Allow smooth vertical page scrolling on touchscreens over the borderless inline graph */
+  touch-action: pan-y;
+}
+
+.graph-modal .graph-canvas {
   touch-action: none;
 }
 

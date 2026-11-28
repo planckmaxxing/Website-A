@@ -70,11 +70,13 @@
     }
 
     let isDarkMode = readThemeIsDark()
-    let bgHex = isDarkMode ? "#1e1e1e" : "#ffffff"
 
-    // --- Renderer Setup: WebGL2 -> WebGL1 -> Canvas2D Fallback ---
+    // --- Renderer Setup: Transparent WebGL2 -> WebGL1 -> Canvas2D Fallback ---
+    // Transparent canvas lets the single unified page background show through seamlessly,
+    // making a left/right split-line color seam during theme transitions physically impossible.
     const glOpts: WebGLContextAttributes = {
-      alpha: false,
+      alpha: true,
+      premultipliedAlpha: true,
       antialias: false,
       depth: false,
       stencil: false,
@@ -124,7 +126,8 @@
           float distPx = length(d);
           float coverage = clamp(v_radius + 0.5 - distPx, 0.0, 1.0);
           if (coverage <= 0.004) discard;
-          gl_FragColor = vec4(u_color, v_alpha * coverage);
+          float a = v_alpha * coverage;
+          gl_FragColor = vec4(u_color * a, a);
         }
       `
 
@@ -178,7 +181,7 @@
 
       context.disable(context.DEPTH_TEST)
       context.enable(context.BLEND)
-      context.blendFunc(context.SRC_ALPHA, context.ONE_MINUS_SRC_ALPHA)
+      context.blendFunc(context.ONE, context.ONE_MINUS_SRC_ALPHA)
       return true
     }
 
@@ -205,7 +208,7 @@
     let bucketNext: Int32Array | null = null
 
     if (!gl) {
-      ctx2d = canvas.getContext("2d", { alpha: false })
+      ctx2d = canvas.getContext("2d", { alpha: true })
       if (!ctx2d) return
       ctx2d.imageSmoothingEnabled = false
       atlasCanvas = document.createElement("canvas")
@@ -282,15 +285,13 @@
 
       if (gl && !contextLost) {
         gl.viewport(0, 0, physWidth, physHeight)
-        const bgVal = isDarkMode ? 30 / 255 : 1.0
-        gl.clearColor(bgVal, bgVal, bgVal, 1.0)
+        gl.clearColor(0, 0, 0, 0)
         gl.clear(gl.COLOR_BUFFER_BIT)
       } else if (ctx2d) {
         buildSpriteAtlas(dpr, isDarkMode)
         ctx2d.setTransform(1, 0, 0, 1, 0, 0)
         ctx2d.imageSmoothingEnabled = false
-        ctx2d.fillStyle = bgHex
-        ctx2d.fillRect(0, 0, physWidth, physHeight)
+        ctx2d.clearRect(0, 0, physWidth, physHeight)
       }
     }
 
@@ -301,12 +302,12 @@
     window.addEventListener("resize", resize)
     resize()
 
-    // --- Theme Synchronization (Exact 500ms cubic-bezier(0.4, 0, 0.2, 1) Lockstep with CSS) ---
-    let themeBlend = isDarkMode ? 0.0 : 1.0 // 0 = dark (#1e1e1e), 1 = light (#ffffff)
+    // --- Theme Synchronization (Exact 360ms cubic-bezier(0.4, 0, 0.2, 1) Dot Glide over Unified CSS Bg) ---
+    let themeBlend = isDarkMode ? 0.0 : 1.0 // 0 = dark, 1 = light
     let themeStartBlend = themeBlend
     let targetThemeBlend = themeBlend
     let themeAnimStartMs = 0 // 0 = idle, -1 = capture on next rAF
-    const THEME_ANIM_DURATION_MS = 500
+    const THEME_ANIM_DURATION_MS = 360
     let lastVisibleCount = 0
 
     // Exact solver for CSS cubic-bezier(0.4, 0, 0.2, 1) (smooth S-curve)
@@ -323,7 +324,6 @@
         if (t < 0) t = 0
         else if (t > 1) t = 1
       }
-      // P1y = 0, P2y = 1 -> y(t) = 3*(1-t)*t^2 + t^3 = t^2 * (3 - 2*t)
       return t * t * (3 - 2 * t)
     }
 
@@ -331,8 +331,7 @@
       const useGL = Boolean(gl && !contextLost)
       if (useGL && gl && glProgram && glBuffer) {
         const t = themeBlend
-        const bgVal = (30 + (255 - 30) * t) / 255
-        gl.clearColor(bgVal, bgVal, bgVal, 1.0)
+        gl.clearColor(0, 0, 0, 0)
         gl.clear(gl.COLOR_BUFFER_BIT)
 
         if (lastVisibleCount > 0) {
@@ -358,10 +357,8 @@
         bucketHead &&
         bucketNext
       ) {
-        const bgC = Math.round(30 + (255 - 30) * themeBlend)
         ctx2d.setTransform(1, 0, 0, 1, 0, 0)
-        ctx2d.fillStyle = `rgb(${bgC}, ${bgC}, ${bgC})`
-        ctx2d.fillRect(0, 0, physWidth, physHeight)
+        ctx2d.clearRect(0, 0, physWidth, physHeight)
 
         for (let b = 0; b < ALPHA_LEVELS; b++) {
           let idx = bucketHead[b]
@@ -389,7 +386,6 @@
 
     function applyTheme(dark: boolean, instant: boolean) {
       isDarkMode = dark
-      bgHex = isDarkMode ? "#1e1e1e" : "#ffffff"
       themeStartBlend = themeBlend
       targetThemeBlend = isDarkMode ? 0.0 : 1.0
       if (instant) {
