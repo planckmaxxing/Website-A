@@ -1,4 +1,4 @@
-import { FullSlug, resolveRelative } from "../../../util/path"
+import { FullSlug } from "../../../util/path"
 
 interface ContentEntry {
   slug: FullSlug
@@ -98,8 +98,45 @@ declare const fetchData: Promise<ContentIndex>
       })
     }
 
+    function getSiteRoot(): string {
+      const cssLink = document.querySelector<HTMLLinkElement>('link[href*="index.css"]')
+      if (cssLink && cssLink.href) {
+        return cssLink.href.replace(/index\.css(?:\?.*)?$/, "")
+      }
+      return window.location.origin + "/"
+    }
+
+    function slugToUrl(targetSlug: FullSlug): URL {
+      const root = getSiteRoot()
+      return targetSlug === "index" ? new URL(root) : new URL(targetSlug, root)
+    }
+
+    const homeBtn = document.getElementById("homeBtn") as HTMLAnchorElement | null
     const navBackBtn = document.getElementById("navBackBtn") as HTMLButtonElement | null
     const navForwardBtn = document.getElementById("navForwardBtn") as HTMLButtonElement | null
+
+    if (homeBtn) {
+      homeBtn.addEventListener("click", (e) => {
+        if (e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || e.button !== 0) return
+        e.preventDefault()
+        const currentSlug = normalizeSlug(document.body.dataset.slug || "index") as FullSlug
+        if (currentSlug === "index") {
+          if (textPane) textPane.scrollTo({ top: 0, behavior: "smooth" })
+          if (window.innerWidth <= 860) window.scrollTo({ top: 0, behavior: "smooth" })
+          setDrawerOpen(false)
+          closeSearchDropdown()
+          return
+        }
+        const url = slugToUrl("index" as FullSlug)
+        setDrawerOpen(false)
+        closeSearchDropdown()
+        if (typeof window.spaNavigate === "function") {
+          window.spaNavigate(url, false)
+        } else {
+          window.location.assign(url)
+        }
+      })
+    }
 
     function syncHistoryButtons() {
       const curIdx = typeof history.state?.gardenIdx === "number" ? history.state.gardenIdx : 0
@@ -146,8 +183,11 @@ declare const fetchData: Promise<ContentIndex>
       links.forEach((link) => {
         const linkSlug = normalizeSlug(link.dataset.slug || "") as FullSlug
         link.classList.toggle("is-active", linkSlug === currentSlug)
-        link.setAttribute("href", resolveRelative(currentSlug, linkSlug))
+        link.setAttribute("href", slugToUrl(linkSlug).href)
       })
+      if (homeBtn) {
+        homeBtn.setAttribute("href", slugToUrl("index" as FullSlug).href)
+      }
       syncHistoryButtons()
     }
 
@@ -214,17 +254,8 @@ declare const fetchData: Promise<ContentIndex>
       focusedSearchIdx = -1
     }
 
-    function getSiteRoot(): string {
-      const cssLink = document.querySelector<HTMLLinkElement>('link[href*="index.css"]')
-      if (cssLink && cssLink.href) {
-        return cssLink.href.replace(/index\.css(?:\?.*)?$/, "")
-      }
-      return window.location.origin + "/"
-    }
-
     function navigateToSlug(targetSlug: FullSlug) {
-      const root = getSiteRoot()
-      const url = targetSlug === "index" ? new URL(root) : new URL(targetSlug, root)
+      const url = slugToUrl(targetSlug)
       if (searchInput) searchInput.value = ""
       closeSearchDropdown()
       setDrawerOpen(false)

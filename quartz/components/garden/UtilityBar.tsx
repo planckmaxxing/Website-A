@@ -2,9 +2,11 @@
 import themeScript from "./scripts/theme.inline"
 // @ts-ignore
 import gardenScript from "./scripts/garden.inline"
-import { QuartzComponent, QuartzComponentConstructor } from "../types"
+import { QuartzComponent, QuartzComponentConstructor, QuartzComponentProps } from "../types"
+import { FullSlug, resolveRelative } from "../../util/path"
 
-const UtilityBar: QuartzComponent = () => {
+const UtilityBar: QuartzComponent = ({ fileData }: QuartzComponentProps) => {
+  const homeHref = resolveRelative(fileData.slug!, "index" as FullSlug)
   return (
     <header class="utility-bar" aria-label="Page controls">
       <div class="utility-left">
@@ -30,6 +32,21 @@ const UtilityBar: QuartzComponent = () => {
             <line x1="0" y1="14" x2="18" y2="14" />
           </svg>
         </button>
+
+        <a href={homeHref} class="util-icon-btn" id="homeBtn" aria-label="Home" title="Home">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M3 10.5L12 3l9 7.5" />
+            <path d="M5.5 9.5V20a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V9.5" />
+          </svg>
+        </a>
 
         <div class="nav-history-group" role="group" aria-label="History navigation">
           <button
