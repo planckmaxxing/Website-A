@@ -165,6 +165,7 @@ interface GraphEdge {
     let panX = 0
     let panY = 0
     let zoom = mode === "local" ? 1.12 : 1.0
+    let defaultZoom = zoom
 
     // Interaction state
     let hoveredNode: GraphNode | null = null
@@ -311,6 +312,7 @@ interface GraphEdge {
       const fitZoomX = (width - padX * 2) / spanX
       const fitZoomY = (height - padY * 2) / spanY
       zoom = Math.max(0.55, Math.min(1.25, Math.min(fitZoomX, fitZoomY)))
+      defaultZoom = zoom
       const midX = (minX + maxX) * 0.5
       const midY = (minY + maxY) * 0.5
       panX = -midX * zoom
@@ -334,9 +336,7 @@ interface GraphEdge {
       const edgeBaseColor = dark ? "rgba(255, 255, 255, 0.13)" : "rgba(0, 0, 0, 0.13)"
       const edgeActiveColor = dark ? "rgba(190, 92, 92, 0.68)" : "rgba(160, 70, 70, 0.62)"
       const edgeDimColor = dark ? "rgba(255, 255, 255, 0.04)" : "rgba(0, 0, 0, 0.04)"
-      const labelColor = dark ? "#dadada" : "#111111"
-      const labelMutedColor = dark ? "rgba(218, 218, 218, 0.68)" : "rgba(17, 17, 17, 0.68)"
-      const labelDimColor = dark ? "rgba(218, 218, 218, 0.18)" : "rgba(17, 17, 17, 0.18)"
+      const labelRgb = dark ? "218, 218, 218" : "17, 17, 17"
 
       const activeFocus = draggedNode ?? hoveredNode
       const focusNeighbors = activeFocus ? adj.get(activeFocus) : null
@@ -381,30 +381,37 @@ interface GraphEdge {
         ctx.fill()
       }
 
-      // Draw crisp Inter labels
-      const showAllLabels = zoom >= 0.85 || nodes.length <= 16
-      const fontSize = Math.max(9, Math.min(11.5, 10.5 / Math.sqrt(zoom)))
-      ctx.font = `400 ${fontSize}px Inter, -apple-system, BlinkMacSystemFont, sans-serif`
-      ctx.textAlign = "center"
-      ctx.textBaseline = "top"
+      // Labels hidden at default zoom — fade in smoothly only when zoomed in (or hovering a node)
+      const zoomThreshold = defaultZoom * 1.18
+      const zoomFadeSpan = defaultZoom * 0.45
+      const zoomLabelAlpha = Math.max(0, Math.min(1, (zoom - zoomThreshold) / zoomFadeSpan))
 
-      for (let i = 0; i < nodes.length; i++) {
-        const n = nodes[i]
-        const isFocused = n === activeFocus
-        const isNeighbor = Boolean(focusNeighbors && focusNeighbors.has(n))
-        const isDimmed = Boolean(activeFocus && !isFocused && !isNeighbor)
+      if (zoomLabelAlpha > 0.01 || activeFocus) {
+        const fontSize = Math.max(8.5, Math.min(11.5, 10.5 / Math.sqrt(zoom)))
+        ctx.font = `400 ${fontSize}px Inter, -apple-system, BlinkMacSystemFont, sans-serif`
+        ctx.textAlign = "center"
+        ctx.textBaseline = "top"
 
-        if (!showAllLabels && !isFocused && !isNeighbor && !n.isCurrent) continue
+        for (let i = 0; i < nodes.length; i++) {
+          const n = nodes[i]
+          const isFocused = n === activeFocus
+          const isNeighbor = Boolean(focusNeighbors && focusNeighbors.has(n))
+          const isDimmed = Boolean(activeFocus && !isFocused && !isNeighbor)
 
-        const labelY = n.y + nodeRadius(n) + 5 / zoom
-        ctx.fillStyle = isFocused
-          ? labelColor
-          : isDimmed
-            ? labelDimColor
-            : isNeighbor || n.isCurrent
-              ? labelColor
-              : labelMutedColor
-        ctx.fillText(n.title, n.x, labelY)
+          let textAlpha = 0
+          if (isFocused) {
+            textAlpha = 0.96
+          } else if (zoomLabelAlpha > 0.01) {
+            const base = isDimmed ? 0.2 : isNeighbor || n.isCurrent ? 0.95 : 0.72
+            textAlpha = base * zoomLabelAlpha
+          }
+
+          if (textAlpha <= 0.01) continue
+
+          const labelY = n.y + nodeRadius(n) + 5 / zoom
+          ctx.fillStyle = `rgba(${labelRgb}, ${textAlpha.toFixed(3)})`
+          ctx.fillText(n.title, n.x, labelY)
+        }
       }
 
       ctx.restore()
