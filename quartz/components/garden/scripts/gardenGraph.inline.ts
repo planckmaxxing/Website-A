@@ -1,4 +1,4 @@
-import { FullSlug, SimpleSlug, resolveRelative, simplifySlug } from "../../../util/path"
+import { FullSlug, SimpleSlug, simplifySlug } from "../../../util/path"
 
 interface ContentEntry {
   slug: FullSlug
@@ -12,7 +12,7 @@ type ContentIndex = Record<string, ContentEntry>
 declare const fetchData: Promise<ContentIndex>
 
 interface GraphNode {
-  id: string
+  id: FullSlug
   slug: FullSlug
   title: string
   x: number
@@ -21,11 +21,18 @@ interface GraphNode {
   vy: number
   degree: number
   isCurrent: boolean
+  /** Smooth per-node hover/neighbor highlight intensity [0..1] */
+  highlight: number
+  /** Smooth per-node dim factor [0..1] (0 = normal, 1 = dimmed) */
+  dim: number
+  /** Smooth per-node hovered label alpha [0..1] */
+  hoverLabel: number
 }
 
 interface GraphEdge {
   source: GraphNode
   target: GraphNode
+  highlight: number
 }
 
 ;(function () {
@@ -45,6 +52,54 @@ interface GraphEdge {
     return document.documentElement.getAttribute("data-theme") !== "light"
   }
 
+  /**
+   * Resolves the canonical site root URL (e.g. "https://planckmaxxing.github.io/w-a/" or "http://127.0.0.1:8080/")
+   * directly from the page's index.css stylesheet link, avoiding trailing-slash / nested-folder relative drift.
+   */
+  function getSiteRoot(): string {
+    const cssLink = document.querySelector<HTMLLinkElement>('link[href*="index.css"]')
+    if (cssLink && cssLink.href) {
+      return cssLink.href.replace(/index\.css(?:\?.*)?$/, "")
+    }
+    return window.location.origin + "/"
+  }
+
+  function resolveTargetUrl(targetSlug: FullSlug): URL {
+    const root = getSiteRoot()
+    if (targetSlug === "index") {
+      return new URL(root)
+    }
+    return new URL(targetSlug, root)
+  }
+
+  /** Exact CSS cubic-bezier(0.22, 1, 0.36, 1) solver matching page & murmuration theme transitions */
+  function easeOutQuintic(x: number): number {
+    if (x <= 0) return 0
+    if (x >= 1) return 1
+    let t = x
+    for (let i = 0; i < 4; i++) {
+      const u = 1 - t
+      const cx = 3 * u * u * t * 0.22 + 3 * u * t * t * 0.36 + t * t * t
+      const dx = 3 * u * u * 0.22 + 6 * u * t * (0.36 - 0.22) + 3 * t * t * (1 - 0.36)
+      if (Math.abs(dx) < 1e-6) break
+      t -= (cx - x) / dx
+      if (t < 0) t = 0
+      else if (t > 1) t = 1
+    }
+    const u = 1 - t
+    return 1 - u * u * u
+  }
+
+  /** Deterministic hash in [0, 1) for reproducible, jitter-free initial node seeding */
+  function hashSlug(str: string): number {
+    let h = 2166136261
+    for (let i = 0; i < str.length; i++) {
+      h ^= str.charCodeAt(i)
+      h = Math.imul(h, 16777619)
+    }
+    return ((h >>> 0) % 10000) / 10000
+  }
+
   function buildGraphData(
     index: ContentIndex,
     currentSlug: FullSlug,
@@ -59,9 +114,11 @@ interface GraphEdge {
       const simple = simplifySlug(full)
       simpleToFull.set(simple, full)
       simpleToFull.set(full, full)
+      simpleToFull.set(full.toLowerCase(), full)
       if (full === "index") {
         simpleToFull.set("/", full)
         simpleToFull.set("", full)
+        simpleToFull.set("index", full)
       }
       slugMap.set(full, {
         slug: full,
@@ -70,7 +127,6 @@ interface GraphEdge {
       })
     }
 
-    // Build undirected adjacency and unique edge list
     const edgePairs: Array<[FullSlug, FullSlug]> = []
     const edgeKeys = new Set<string>()
     const neighbors = new Map<FullSlug, Set<FullSlug>>()
@@ -85,6 +141,7 @@ interface GraphEdge {
         const targetFull =
           simpleToFull.get(rawTarget) ??
           simpleToFull.get(cleaned) ??
+          simpleToFull.get(cleaned.toLowerCase()) ??
           (cleaned === "" ? ("index" as FullSlug) : undefined)
         if (!targetFull || targetFull === srcFull || !slugMap.has(targetFull)) continue
         const key = srcFull < targetFull ? `${srcFull}||${targetFull}` : `${targetFull}||${srcFull}`
@@ -109,23 +166,32 @@ interface GraphEdge {
     }
 
     const nodeMap = new Map<FullSlug, GraphNode>()
-    const list = Array.from(allowedSlugs)
+    const list = Array.from(allowedSlugs).sort()
     const count = list.length
 
     list.forEach((slug, i) => {
       const info = slugMap.get(slug)!
-      const angle = (i / Math.max(1, count)) * Math.PI * 2
-      const radius = slug === currentSlug && mode === "local" ? 0 : 48 + (i % 3) * 18
+      const goldenAngle = i * 2.399963229728653
+      const jitter = (hashSlug(slug) - 0.5) * 14
+      const radius =
+        slug === currentSlug && mode === "local"
+          ? 0
+          : count <= 6
+            ? 70 + jitter
+            : Math.sqrt(i + 1) * 44 + jitter
       nodeMap.set(slug, {
         id: slug,
         slug,
         title: info.title,
-        x: Math.cos(angle) * radius,
-        y: Math.sin(angle) * radius,
+        x: Math.cos(goldenAngle) * radius,
+        y: Math.sin(goldenAngle) * radius,
         vx: 0,
         vy: 0,
         degree: 0,
         isCurrent: slug === currentSlug,
+        highlight: 0,
+        dim: 0,
+        hoverLabel: 0,
       })
     })
 
@@ -134,7 +200,7 @@ interface GraphEdge {
       const na = nodeMap.get(a)
       const nb = nodeMap.get(b)
       if (na && nb) {
-        edges.push({ source: na, target: nb })
+        edges.push({ source: na, target: nb, highlight: 0 })
         na.degree++
         nb.degree++
       }
@@ -158,24 +224,48 @@ interface GraphEdge {
     if (!ctx) return () => {}
 
     let width = 300
-    let height = 240
+    let height = 260
     let dpr = Math.min(window.devicePixelRatio || 1, 2)
 
-    // Camera pan & zoom
+    // Camera state
     let panX = 0
     let panY = 0
-    let zoom = mode === "local" ? 1.12 : 1.0
-    let defaultZoom = zoom
+    let zoom = 1.0
+    let defaultPanX = 0
+    let defaultPanY = 0
+    let defaultZoom = 1.0
+
+    // Smooth camera reset animation (double-click background)
+    let camAnimStart = 0
+    let camAnimFromPanX = 0
+    let camAnimFromPanY = 0
+    let camAnimFromZoom = 1.0
+    const CAM_RESET_MS = 340
+
+    // Synchronized theme color blend [0 = dark, 1 = light]
+    let themeBlend = isDark() ? 0.0 : 1.0
+    let themeStartBlend = themeBlend
+    let targetThemeBlend = themeBlend
+    let themeAnimStart = 0
+    const THEME_ANIM_MS = 480
 
     // Interaction state
     let hoveredNode: GraphNode | null = null
-    let draggedNode: GraphNode | null = null
+    let pressedNode: GraphNode | null = null
+    let draggingNode: GraphNode | null = null
     let isPanning = false
-    let lastPointerX = 0
-    let lastPointerY = 0
-    let movedDistance = 0
+    let downX = 0
+    let downY = 0
+    let lastX = 0
+    let lastY = 0
+    let movedDist = 0
+    const DRAG_DEADZONE = 4
 
-    // Adjacency for fast hover highlight
+    // Multi-touch pinch zoom tracking
+    const activePointers = new Map<number, { x: number; y: number }>()
+    let lastPinchDist = 0
+
+    // Adjacency map
     const adj = new Map<GraphNode, Set<GraphNode>>()
     for (const n of nodes) adj.set(n, new Set())
     for (const e of edges) {
@@ -183,30 +273,26 @@ interface GraphEdge {
       adj.get(e.target)!.add(e.source)
     }
 
+    // D3/Obsidian-style cooling simulation
     let alpha = 1.0
-    let rafId = 0
-    let destroyed = false
+    let alphaTarget = 0.0
+    const alphaDecay = 0.028
+    const velocityDecay = 0.62 // Obsidian-like damped fluid spring motion
 
-    function resize() {
-      const parent = canvas.parentElement
-      if (!parent) return
-      const rect = parent.getBoundingClientRect()
-      if (rect.width < 10 || rect.height < 10) return
-      dpr = Math.min(window.devicePixelRatio || 1, 2)
-      width = rect.width
-      height = rect.height
-      canvas.width = Math.round(width * dpr)
-      canvas.height = Math.round(height * dpr)
-      wake(0.15)
+    let rafId = 0
+    let lastFrameMs = 0
+    let destroyed = false
+    let hasInitialFit = false
+
+    function nodeRadius(n: GraphNode): number {
+      // Obsidian node size scales gently with connection count (degree)
+      const degScale = Math.sqrt(n.degree + 1) * 1.15
+      const base = 3.2 + Math.min(3.6, degScale)
+      return n.isCurrent ? Math.max(base, 5.2) : base
     }
 
     function screenToWorld(sx: number, sy: number): [number, number] {
       return [(sx - width * 0.5 - panX) / zoom, (sy - height * 0.5 - panY) / zoom]
-    }
-
-    function nodeRadius(n: GraphNode): number {
-      const base = n.isCurrent ? 5.2 : 3.4 + Math.min(3.0, n.degree * 0.45)
-      return base
     }
 
     function hitTest(sx: number, sy: number): GraphNode | null {
@@ -215,7 +301,7 @@ interface GraphEdge {
       let bestDistSq = Infinity
       for (let i = nodes.length - 1; i >= 0; i--) {
         const n = nodes[i]
-        const hitR = (nodeRadius(n) + 7) / zoom
+        const hitR = nodeRadius(n) + 7 / Math.max(0.6, zoom)
         const dx = wx - n.x
         const dy = wy - n.y
         const d2 = dx * dx + dy * dy
@@ -232,29 +318,32 @@ interface GraphEdge {
       if (nCount === 0) return
 
       const isLarge = width > 560
-      const repulsion = isLarge ? 26000 : mode === "local" ? 15000 : 14000
-      const linkDist = isLarge ? 140 : mode === "local" ? 105 : 108
-      const linkStrength = 0.042
-      const gravX = 0.0042
-      const gravY = 0.0095
+      const chargeStrength = isLarge ? 3200 : mode === "local" ? 2100 : 1850
+      const linkDist = isLarge ? 128 : mode === "local" ? 96 : 94
+      const linkStrength = 0.14
+      const centerXStrength = 0.012
+      const centerYStrength = isLarge ? 0.014 : 0.022
 
-      // Pairwise repulsion (strong enough that node titles breathe with zero overlap)
+      // 1. Repel force (Coulomb charge, slightly stronger for hubs so clusters open cleanly)
       for (let i = 0; i < nCount; i++) {
         const a = nodes[i]
+        const weightA = 1 + a.degree * 0.16
         for (let j = i + 1; j < nCount; j++) {
           const b = nodes[j]
+          const weightB = 1 + b.degree * 0.16
           let dx = b.x - a.x
           let dy = b.y - a.y
           let distSq = dx * dx + dy * dy
-          if (distSq < 4) {
-            dx = (Math.random() - 0.5) * 4
-            dy = (Math.random() - 0.5) * 4
-            distSq = dx * dx + dy * dy + 4
+          if (distSq < 9) {
+            const angle = (i * 1.7 + j * 2.3) % (Math.PI * 2)
+            dx = Math.cos(angle) * 3
+            dy = Math.sin(angle) * 3
+            distSq = 9
           }
-          const force = Math.min(28, (repulsion / distSq) * alpha * 0.09)
-          const invDist = 1 / Math.sqrt(distSq)
-          const fx = dx * invDist * force
-          const fy = dy * invDist * force
+          const dist = Math.sqrt(distSq)
+          const f = Math.min(22, ((chargeStrength * weightA * weightB) / distSq) * alpha * 0.06)
+          const fx = (dx / dist) * f
+          const fy = (dy / dist) * f
           a.vx -= fx
           a.vy -= fy
           b.vx += fx
@@ -262,7 +351,7 @@ interface GraphEdge {
         }
       }
 
-      // Spring attraction along edges
+      // 2. Link force (Hooke spring pull toward rest distance)
       for (let i = 0; i < edges.length; i++) {
         const { source, target } = edges[i]
         const dx = target.x - source.x
@@ -271,30 +360,56 @@ interface GraphEdge {
         const diff = (dist - linkDist) * linkStrength * alpha
         const fx = (dx / dist) * diff
         const fy = (dy / dist) * diff
-        source.vx += fx
-        source.vy += fy
-        target.vx -= fx
-        target.vy -= fy
+        // Heavier hub moves slightly less than peripheral leaf (Obsidian/d3 bias)
+        const totalDeg = source.degree + target.degree + 2
+        const bias = (source.degree + 1) / totalDeg
+        source.vx += fx * (1 - bias)
+        source.vy += fy * (1 - bias)
+        target.vx -= fx * bias
+        target.vy -= fy * bias
       }
 
-      // Aspect-aware centering gravity + velocity damping
+      // 3. Gentle center force + damped Verlet integration
       for (let i = 0; i < nCount; i++) {
         const n = nodes[i]
-        if (n === draggedNode) {
+        if (n === draggingNode) {
           n.vx = 0
           n.vy = 0
           continue
         }
-        const mul = n.isCurrent && mode === "local" ? 2.6 : 1.0
-        n.vx = (n.vx - n.x * gravX * mul * alpha) * 0.82
-        n.vy = (n.vy - n.y * gravY * mul * alpha) * 0.82
+        const centerMul = n.isCurrent && mode === "local" ? 3.2 : 1.0
+        n.vx -= n.x * centerXStrength * centerMul * alpha
+        n.vy -= n.y * centerYStrength * centerMul * alpha
+        n.vx *= velocityDecay
+        n.vy *= velocityDecay
         n.x += n.vx
         n.y += n.vy
       }
+
+      // Re-center whole graph around origin when not dragging (prevents slow drift)
+      if (!draggingNode && mode === "global") {
+        let meanX = 0
+        let meanY = 0
+        for (let i = 0; i < nCount; i++) {
+          meanX += nodes[i].x
+          meanY += nodes[i].y
+        }
+        meanX /= nCount
+        meanY /= nCount
+        for (let i = 0; i < nCount; i++) {
+          nodes[i].x -= meanX * 0.08 * alpha
+          nodes[i].y -= meanY * 0.08 * alpha
+        }
+      }
     }
 
-    function autoFitCamera() {
-      if (nodes.length === 0 || width < 40 || height < 40) return
+    function computeFitTransform(): { panX: number; panY: number; zoom: number } {
+      if (nodes.length === 0 || width < 40 || height < 40) {
+        return { panX: 0, panY: 0, zoom: 1.0 }
+      }
+      if (nodes.length === 1) {
+        return { panX: -nodes[0].x, panY: -nodes[0].y, zoom: 1.0 }
+      }
       let minX = Infinity
       let maxX = -Infinity
       let minY = Infinity
@@ -305,23 +420,36 @@ interface GraphEdge {
         if (n.y < minY) minY = n.y
         if (n.y > maxY) maxY = n.y
       }
-      const spanX = Math.max(80, maxX - minX)
-      const spanY = Math.max(60, maxY - minY)
-      const padX = Math.min(110, width * 0.22)
-      const padY = Math.min(68, height * 0.24)
-      const fitZoomX = (width - padX * 2) / spanX
-      const fitZoomY = (height - padY * 2) / spanY
-      zoom = Math.max(0.55, Math.min(1.25, Math.min(fitZoomX, fitZoomY)))
-      defaultZoom = zoom
+      const spanX = Math.max(90, maxX - minX)
+      const spanY = Math.max(70, maxY - minY)
+      const padX = Math.min(72, width * 0.16)
+      const padY = Math.min(48, height * 0.18)
+      const fitZoom = Math.max(
+        0.5,
+        Math.min(1.25, Math.min((width - padX * 2) / spanX, (height - padY * 2) / spanY)),
+      )
       const midX = (minX + maxX) * 0.5
       const midY = (minY + maxY) * 0.5
-      panX = -midX * zoom
-      panY = -midY * zoom
+      return {
+        zoom: fitZoom,
+        panX: -midX * fitZoom,
+        panY: -midY * fitZoom,
+      }
+    }
+
+    function autoFitCamera() {
+      const fit = computeFitTransform()
+      zoom = fit.zoom
+      panX = fit.panX
+      panY = fit.panY
+      defaultZoom = fit.zoom
+      defaultPanX = fit.panX
+      defaultPanY = fit.panY
     }
 
     function draw() {
       if (!ctx) return
-      const dark = isDark()
+      const t = themeBlend
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
       ctx.clearRect(0, 0, width, height)
@@ -330,86 +458,103 @@ interface GraphEdge {
       ctx.translate(width * 0.5 + panX, height * 0.5 + panY)
       ctx.scale(zoom, zoom)
 
-      const accentColor = "rgb(160, 70, 70)"
-      const nodeBaseColor = dark ? "#8e8e93" : "#6e6e73"
-      const nodeDimColor = dark ? "rgba(142, 142, 147, 0.24)" : "rgba(110, 110, 115, 0.24)"
-      const edgeBaseColor = dark ? "rgba(255, 255, 255, 0.13)" : "rgba(0, 0, 0, 0.13)"
-      const edgeActiveColor = dark ? "rgba(190, 92, 92, 0.68)" : "rgba(160, 70, 70, 0.62)"
-      const edgeDimColor = dark ? "rgba(255, 255, 255, 0.04)" : "rgba(0, 0, 0, 0.04)"
-      const labelRgb = dark ? "218, 218, 218" : "17, 17, 17"
+      // Theme-interpolated Obsidian palette (smoothly tracks dark <-> light transition)
+      const baseNodeR = Math.round(142 + (110 - 142) * t)
+      const baseNodeG = Math.round(142 + (110 - 142) * t)
+      const baseNodeB = Math.round(147 + (115 - 147) * t)
 
-      const activeFocus = draggedNode ?? hoveredNode
-      const focusNeighbors = activeFocus ? adj.get(activeFocus) : null
+      const brightNodeR = Math.round(228 + (24 - 228) * t)
+      const brightNodeG = Math.round(228 + (24 - 228) * t)
+      const brightNodeB = Math.round(230 + (26 - 230) * t)
 
-      // Draw edges
+      const edgeRgb = t < 0.5 ? "255, 255, 255" : "0, 0, 0"
+      const edgeBaseAlpha = 0.14
+      const labelR = Math.round(218 + (17 - 218) * t)
+      const labelG = Math.round(218 + (17 - 218) * t)
+      const labelB = Math.round(218 + (17 - 218) * t)
+      const accentR = 160
+      const accentG = 70
+      const accentB = 70
+
+      const activeFocus = draggingNode ?? hoveredNode
+
+      // 1. Draw edges with smooth highlight / dim crossfade
       ctx.lineCap = "round"
       for (let i = 0; i < edges.length; i++) {
-        const { source, target } = edges[i]
-        const isConnected =
-          activeFocus !== null && (source === activeFocus || target === activeFocus)
+        const e = edges[i]
+        const eh = e.highlight
+        const dimBoth = Math.max(e.source.dim, e.target.dim)
+
         ctx.beginPath()
-        ctx.moveTo(source.x, source.y)
-        ctx.lineTo(target.x, target.y)
-        ctx.lineWidth = (isConnected ? 1.35 : 0.95) / zoom
-        ctx.strokeStyle = activeFocus
-          ? isConnected
-            ? edgeActiveColor
-            : edgeDimColor
-          : edgeBaseColor
+        ctx.moveTo(e.source.x, e.source.y)
+        ctx.lineTo(e.target.x, e.target.y)
+        ctx.lineWidth = (0.95 + eh * 0.55) / zoom
+
+        if (eh > 0.02) {
+          const a = edgeBaseAlpha * (1 - eh) + 0.68 * eh
+          ctx.strokeStyle = `rgba(${accentR}, ${accentG}, ${accentB}, ${a.toFixed(3)})`
+        } else {
+          const a = edgeBaseAlpha * (1 - dimBoth * 0.72)
+          ctx.strokeStyle = `rgba(${edgeRgb}, ${a.toFixed(3)})`
+        }
         ctx.stroke()
       }
 
-      // Draw nodes
+      // 2. Draw nodes with smooth Obsidian hover glow & scale
       for (let i = 0; i < nodes.length; i++) {
         const n = nodes[i]
-        const isFocused = n === activeFocus
-        const isNeighbor = Boolean(focusNeighbors && focusNeighbors.has(n))
-        const isDimmed = Boolean(activeFocus && !isFocused && !isNeighbor)
+        const isPrimaryFocus = n === activeFocus
+        const h = n.highlight
+        const d = n.dim
 
-        const r = nodeRadius(n) * (isFocused ? 1.22 : 1.0)
+        const r = nodeRadius(n) * (1 + (isPrimaryFocus ? 0.24 : h * 0.08))
+
+        // Subtle Obsidian halo ring on directly hovered/dragged node
+        if (n.hoverLabel > 0.02) {
+          ctx.beginPath()
+          ctx.arc(n.x, n.y, r + 3.2 / zoom, 0, Math.PI * 2)
+          ctx.fillStyle = `rgba(${accentR}, ${accentG}, ${accentB}, ${(0.18 * n.hoverLabel).toFixed(3)})`
+          ctx.fill()
+        }
+
         ctx.beginPath()
         ctx.arc(n.x, n.y, r, 0, Math.PI * 2)
-        if (isFocused || (n.isCurrent && !isDimmed)) {
-          ctx.fillStyle = accentColor
-        } else if (isNeighbor) {
-          ctx.fillStyle = dark ? "#dadada" : "#1c1c1e"
-        } else if (isDimmed) {
-          ctx.fillStyle = nodeDimColor
+
+        if (isPrimaryFocus || (n.isCurrent && d < 0.5)) {
+          const alphaNode = 1 - d * 0.65
+          ctx.fillStyle = `rgba(${accentR}, ${accentG}, ${accentB}, ${alphaNode.toFixed(3)})`
         } else {
-          ctx.fillStyle = nodeBaseColor
+          const nr = Math.round(baseNodeR + (brightNodeR - baseNodeR) * h)
+          const ng = Math.round(baseNodeG + (brightNodeG - baseNodeG) * h)
+          const nb = Math.round(baseNodeB + (brightNodeB - baseNodeB) * h)
+          const na = 1 - d * 0.74
+          ctx.fillStyle = `rgba(${nr}, ${ng}, ${nb}, ${na.toFixed(3)})`
         }
         ctx.fill()
       }
 
-      // Labels hidden at default zoom — fade in smoothly only when zoomed in (or hovering a node)
-      const zoomThreshold = defaultZoom * 1.18
-      const zoomFadeSpan = defaultZoom * 0.45
+      // 3. Labels: hidden at default zoom; fade in smoothly when zoomed past threshold (or hovering a node)
+      const zoomThreshold = defaultZoom * 1.15
+      const zoomFadeSpan = defaultZoom * 0.42
       const zoomLabelAlpha = Math.max(0, Math.min(1, (zoom - zoomThreshold) / zoomFadeSpan))
 
-      if (zoomLabelAlpha > 0.01 || activeFocus) {
-        const fontSize = Math.max(8.5, Math.min(11.5, 10.5 / Math.sqrt(zoom)))
-        ctx.font = `400 ${fontSize}px Inter, -apple-system, BlinkMacSystemFont, sans-serif`
+      const hasHoverLabel = nodes.some((n) => n.hoverLabel > 0.01)
+      if (zoomLabelAlpha > 0.01 || hasHoverLabel) {
+        // Screen-stable crisp Inter label size (Obsidian text scaling)
+        const screenFontPx = Math.max(10, Math.min(13, 10.5 * Math.pow(zoom, 0.25)))
+        const worldFontPx = screenFontPx / zoom
+        ctx.font = `400 ${worldFontPx.toFixed(2)}px Inter, -apple-system, BlinkMacSystemFont, sans-serif`
         ctx.textAlign = "center"
         ctx.textBaseline = "top"
 
         for (let i = 0; i < nodes.length; i++) {
           const n = nodes[i]
-          const isFocused = n === activeFocus
-          const isNeighbor = Boolean(focusNeighbors && focusNeighbors.has(n))
-          const isDimmed = Boolean(activeFocus && !isFocused && !isNeighbor)
-
-          let textAlpha = 0
-          if (isFocused) {
-            textAlpha = 0.96
-          } else if (zoomLabelAlpha > 0.01) {
-            const base = isDimmed ? 0.2 : isNeighbor || n.isCurrent ? 0.95 : 0.72
-            textAlpha = base * zoomLabelAlpha
-          }
-
-          if (textAlpha <= 0.01) continue
+          const baseZoomAlpha = zoomLabelAlpha * (1 - n.dim * 0.75) * (n.isCurrent || n.highlight > 0.3 ? 0.94 : 0.74)
+          const labelAlpha = Math.max(n.hoverLabel * 0.96, baseZoomAlpha)
+          if (labelAlpha <= 0.01) continue
 
           const labelY = n.y + nodeRadius(n) + 5 / zoom
-          ctx.fillStyle = `rgba(${labelRgb}, ${textAlpha.toFixed(3)})`
+          ctx.fillStyle = `rgba(${labelR}, ${labelG}, ${labelB}, ${labelAlpha.toFixed(3)})`
           ctx.fillText(n.title, n.x, labelY)
         }
       }
@@ -417,64 +562,209 @@ interface GraphEdge {
       ctx.restore()
     }
 
-    function tick() {
+    function updateVisualTransitions(now: number, dtSec: number): boolean {
+      let needsMore = false
+
+      // Smooth theme color interpolation
+      if (themeBlend !== targetThemeBlend) {
+        if (themeAnimStart === 0) {
+          themeBlend = targetThemeBlend
+        } else {
+          const p = (now - themeAnimStart) / THEME_ANIM_MS
+          if (p >= 1) {
+            themeBlend = targetThemeBlend
+            themeAnimStart = 0
+          } else {
+            themeBlend = themeStartBlend + (targetThemeBlend - themeStartBlend) * easeOutQuintic(p)
+            needsMore = true
+          }
+        }
+      }
+
+      // Smooth double-click camera reset animation
+      if (camAnimStart > 0) {
+        const p = (now - camAnimStart) / CAM_RESET_MS
+        if (p >= 1) {
+          panX = defaultPanX
+          panY = defaultPanY
+          zoom = defaultZoom
+          camAnimStart = 0
+        } else {
+          const e = easeOutQuintic(p)
+          panX = camAnimFromPanX + (defaultPanX - camAnimFromPanX) * e
+          panY = camAnimFromPanY + (defaultPanY - camAnimFromPanY) * e
+          zoom = camAnimFromZoom + (defaultZoom - camAnimFromZoom) * e
+          needsMore = true
+        }
+      }
+
+      // Smooth ~150ms Obsidian hover highlight & dimming crossfade
+      const activeFocus = draggingNode ?? hoveredNode
+      const focusNeighbors = activeFocus ? adj.get(activeFocus) : null
+      const lerpRate = Math.min(1, dtSec * 16)
+
+      for (let i = 0; i < nodes.length; i++) {
+        const n = nodes[i]
+        const isPrimary = n === activeFocus
+        const isNeighbor = Boolean(focusNeighbors && focusNeighbors.has(n))
+        const targetH = isPrimary || isNeighbor ? 1 : 0
+        const targetD = activeFocus && !isPrimary && !isNeighbor ? 1 : 0
+        const targetLabel = isPrimary ? 1 : 0
+
+        if (Math.abs(n.highlight - targetH) > 0.005) {
+          n.highlight += (targetH - n.highlight) * lerpRate
+          needsMore = true
+        } else {
+          n.highlight = targetH
+        }
+
+        if (Math.abs(n.dim - targetD) > 0.005) {
+          n.dim += (targetD - n.dim) * lerpRate
+          needsMore = true
+        } else {
+          n.dim = targetD
+        }
+
+        if (Math.abs(n.hoverLabel - targetLabel) > 0.005) {
+          n.hoverLabel += (targetLabel - n.hoverLabel) * lerpRate
+          needsMore = true
+        } else {
+          n.hoverLabel = targetLabel
+        }
+      }
+
+      for (let i = 0; i < edges.length; i++) {
+        const e = edges[i]
+        const isConnected =
+          activeFocus !== null && (e.source === activeFocus || e.target === activeFocus)
+        const targetEh = isConnected ? 1 : 0
+        if (Math.abs(e.highlight - targetEh) > 0.005) {
+          e.highlight += (targetEh - e.highlight) * lerpRate
+          needsMore = true
+        } else {
+          e.highlight = targetEh
+        }
+      }
+
+      return needsMore
+    }
+
+    function tick(now: number) {
       rafId = 0
       if (destroyed) return
 
-      if (alpha > 0.008 || draggedNode) {
+      const dtSec = lastFrameMs === 0 ? 1 / 60 : Math.min(0.05, (now - lastFrameMs) * 0.001)
+      lastFrameMs = now
+
+      let physicsActive = false
+      if (alpha > 0.004 || alphaTarget > 0) {
+        alpha += (alphaTarget - alpha) * alphaDecay
+        if (alpha < 0.004 && alphaTarget === 0) alpha = 0
         stepPhysics()
-        if (!draggedNode) {
-          alpha *= 0.965
-        } else {
-          alpha = Math.max(alpha, 0.28)
-        }
-        draw()
+        physicsActive = alpha > 0.004 || alphaTarget > 0
+      }
+
+      const visualsActive = updateVisualTransitions(now, dtSec)
+      draw()
+
+      if (physicsActive || visualsActive) {
         rafId = requestAnimationFrame(tick)
       } else {
+        lastFrameMs = 0
+      }
+    }
+
+    function ensureLoop() {
+      if (destroyed || rafId !== 0) return
+      rafId = requestAnimationFrame(tick)
+    }
+
+    function resize() {
+      const parent = canvas.parentElement
+      if (!parent) return
+      const rect = parent.getBoundingClientRect()
+      if (rect.width < 10 || rect.height < 10) return
+
+      const nextDpr = Math.min(window.devicePixelRatio || 1, 2)
+      const nextPhysW = Math.round(rect.width * nextDpr)
+      const nextPhysH = Math.round(rect.height * nextDpr)
+      if (
+        hasInitialFit &&
+        canvas.width === nextPhysW &&
+        canvas.height === nextPhysH &&
+        width === rect.width &&
+        height === rect.height
+      ) {
+        return
+      }
+
+      dpr = nextDpr
+      width = rect.width
+      height = rect.height
+      canvas.width = nextPhysW
+      canvas.height = nextPhysH
+
+      if (!hasInitialFit) {
+        hasInitialFit = true
+        alpha = 1.0
+        for (let i = 0; i < 140; i++) {
+          stepPhysics()
+          alpha *= 0.98
+        }
+        autoFitCamera()
+        alpha = 0.14
+        ensureLoop()
+      } else {
+        // Recompute default fit targets without disturbing user's current node positions
+        const fit = computeFitTransform()
+        defaultZoom = fit.zoom
+        defaultPanX = fit.panX
+        defaultPanY = fit.panY
         draw()
       }
     }
 
-    function wake(minAlpha = 0.25) {
-      if (destroyed) return
-      alpha = Math.max(alpha, minAlpha)
-      if (rafId === 0) {
-        rafId = requestAnimationFrame(tick)
-      }
-    }
-
-    // Pre-settle after measuring container so initial render is spread out & balanced
-    function settleAndFit() {
-      alpha = 1.0
-      for (let i = 0; i < 110; i++) {
-        stepPhysics()
-        alpha *= 0.985
-      }
-      autoFitCamera()
-      alpha = 0.25
-    }
-
-    function getLocalCoords(e: PointerEvent | WheelEvent): [number, number] {
+    function getLocalCoords(e: PointerEvent | WheelEvent | MouseEvent): [number, number] {
       const rect = canvas.getBoundingClientRect()
       return [e.clientX - rect.left, e.clientY - rect.top]
     }
 
     function onPointerDown(e: PointerEvent) {
-      if (e.button !== 0) return
+      if (e.pointerType === "mouse" && e.button !== 0) return
       const [sx, sy] = getLocalCoords(e)
-      lastPointerX = sx
-      lastPointerY = sy
-      movedDistance = 0
+      activePointers.set(e.pointerId, { x: sx, y: sy })
+
+      // Cancel camera reset animation on user input
+      camAnimStart = 0
+
+      if (activePointers.size === 2) {
+        // Switch smoothly into 2-finger pinch zoom
+        pressedNode = null
+        draggingNode = null
+        isPanning = false
+        alphaTarget = 0
+        const pts = Array.from(activePointers.values())
+        lastPinchDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
+        return
+      }
+
+      downX = sx
+      downY = sy
+      lastX = sx
+      lastY = sy
+      movedDist = 0
 
       const hit = hitTest(sx, sy)
       if (hit) {
-        draggedNode = hit
-        canvas.style.cursor = "grabbing"
-        wake(0.35)
+        pressedNode = hit
+        hoveredNode = hit
+        canvas.style.cursor = "pointer"
+        ensureLoop()
       } else {
         isPanning = true
         canvas.style.cursor = "grabbing"
       }
+
       try {
         canvas.setPointerCapture(e.pointerId)
       } catch {}
@@ -482,17 +772,49 @@ interface GraphEdge {
 
     function onPointerMove(e: PointerEvent) {
       const [sx, sy] = getLocalCoords(e)
-      const dx = sx - lastPointerX
-      const dy = sy - lastPointerY
-      lastPointerX = sx
-      lastPointerY = sy
-      movedDistance += Math.hypot(dx, dy)
+      if (activePointers.has(e.pointerId)) {
+        activePointers.set(e.pointerId, { x: sx, y: sy })
+      }
 
-      if (draggedNode) {
+      // 2-finger touch pinch zoom
+      if (activePointers.size === 2) {
+        const pts = Array.from(activePointers.values())
+        const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y)
+        if (lastPinchDist > 10 && dist > 10) {
+          const midX = (pts[0].x + pts[1].x) * 0.5
+          const midY = (pts[0].y + pts[1].y) * 0.5
+          const factor = dist / lastPinchDist
+          const nextZoom = Math.max(0.28, Math.min(4.5, zoom * factor))
+          const ratio = nextZoom / zoom
+          panX = midX - width * 0.5 - (midX - width * 0.5 - panX) * ratio
+          panY = midY - height * 0.5 - (midY - height * 0.5 - panY) * ratio
+          zoom = nextZoom
+          draw()
+        }
+        lastPinchDist = dist
+        return
+      }
+
+      const dx = sx - lastX
+      const dy = sy - lastY
+      lastX = sx
+      lastY = sy
+      movedDist = Math.hypot(sx - downX, sy - downY)
+
+      // Engage node drag only after crossing click deadzone so clicks never nudge nodes
+      if (pressedNode && !draggingNode && movedDist >= DRAG_DEADZONE) {
+        draggingNode = pressedNode
+        alphaTarget = 0.28
+        alpha = Math.max(alpha, 0.35)
+        canvas.style.cursor = "grabbing"
+        ensureLoop()
+      }
+
+      if (draggingNode) {
         const [wx, wy] = screenToWorld(sx, sy)
-        draggedNode.x = wx
-        draggedNode.y = wy
-        wake(0.35)
+        draggingNode.x = wx
+        draggingNode.y = wy
+        ensureLoop()
         return
       }
 
@@ -503,65 +825,105 @@ interface GraphEdge {
         return
       }
 
+      // Hover detection
       const hit = hitTest(sx, sy)
       if (hit !== hoveredNode) {
         hoveredNode = hit
         canvas.style.cursor = hoveredNode ? "pointer" : "grab"
-        draw()
+        ensureLoop()
       }
     }
 
     function onPointerUp(e: PointerEvent) {
-      const wasDragged = draggedNode
-      const wasClick = movedDistance < 6
-      draggedNode = null
+      activePointers.delete(e.pointerId)
+      if (activePointers.size < 2) {
+        lastPinchDist = 0
+      }
+
+      const clickedNode = pressedNode && !draggingNode && movedDist < DRAG_DEADZONE ? pressedNode : null
+      const wasDragging = draggingNode !== null
+
+      pressedNode = null
+      draggingNode = null
       isPanning = false
+      alphaTarget = 0
+
       try {
         canvas.releasePointerCapture(e.pointerId)
       } catch {}
 
       const [sx, sy] = getLocalCoords(e)
-      hoveredNode = hitTest(sx, sy)
+      hoveredNode = e.pointerType === "mouse" ? hitTest(sx, sy) : null
       canvas.style.cursor = hoveredNode ? "pointer" : "grab"
 
-      if (wasClick && wasDragged) {
-        const targetSlug = wasDragged.slug
+      if (clickedNode) {
+        const targetSlug = clickedNode.slug
         if (targetSlug !== currentSlug) {
-          const rel = resolveRelative(currentSlug, targetSlug)
-          const url = new URL(rel, window.location.href)
+          const url = resolveTargetUrl(targetSlug)
           onNavigate?.()
           if (typeof window.spaNavigate === "function") {
             window.spaNavigate(url, false)
           } else {
             window.location.assign(url)
           }
+          return
         }
-      } else {
-        wake(0.15)
       }
+
+      if (wasDragging) {
+        alpha = Math.max(alpha, 0.22)
+      }
+      ensureLoop()
     }
 
     function onPointerLeave() {
-      if (!draggedNode && !isPanning && hoveredNode) {
+      if (!draggingNode && !isPanning && hoveredNode) {
         hoveredNode = null
         canvas.style.cursor = "grab"
-        draw()
+        ensureLoop()
       }
+    }
+
+    function onDoubleClick(e: MouseEvent) {
+      const [sx, sy] = getLocalCoords(e)
+      if (hitTest(sx, sy)) return
+      // Smoothly reset pan & zoom back to fitted default view
+      camAnimFromPanX = panX
+      camAnimFromPanY = panY
+      camAnimFromZoom = zoom
+      camAnimStart = performance.now()
+      ensureLoop()
     }
 
     function onWheel(e: WheelEvent) {
       e.preventDefault()
+      camAnimStart = 0
       const [sx, sy] = getLocalCoords(e)
-      const factor = e.deltaY < 0 ? 1.1 : 0.91
-      const nextZoom = Math.max(0.45, Math.min(2.8, zoom * factor))
-      const scaleChange = nextZoom / zoom
-      panX = sx - width * 0.5 - (sx - width * 0.5 - panX) * scaleChange
-      panY = sy - height * 0.5 - (sy - height * 0.5 - panY) * scaleChange
+      // Smooth exponential zoom proportional to deltaY (handles both trackpads & mouse wheels smoothly)
+      const unitScale = e.deltaMode === 1 ? 18 : e.deltaMode === 2 ? 120 : 1
+      const clampedDelta = Math.max(-120, Math.min(120, e.deltaY * unitScale))
+      const factor = Math.exp(-clampedDelta * 0.0024)
+      const nextZoom = Math.max(0.28, Math.min(4.5, zoom * factor))
+      const ratio = nextZoom / zoom
+      panX = sx - width * 0.5 - (sx - width * 0.5 - panX) * ratio
+      panY = sy - height * 0.5 - (sy - height * 0.5 - panY) * ratio
       zoom = nextZoom
       draw()
     }
 
-    const onTheme = () => draw()
+    function onTheme(e: Event) {
+      const custom = e as CustomEvent<{ instant?: boolean }>
+      themeStartBlend = themeBlend
+      targetThemeBlend = isDark() ? 0.0 : 1.0
+      if (custom?.detail?.instant) {
+        themeBlend = targetThemeBlend
+        themeAnimStart = 0
+        draw()
+      } else {
+        themeAnimStart = performance.now()
+        ensureLoop()
+      }
+    }
 
     canvas.style.cursor = "grab"
     canvas.addEventListener("pointerdown", onPointerDown)
@@ -569,6 +931,7 @@ interface GraphEdge {
     canvas.addEventListener("pointerup", onPointerUp)
     canvas.addEventListener("pointercancel", onPointerUp)
     canvas.addEventListener("pointerleave", onPointerLeave)
+    canvas.addEventListener("dblclick", onDoubleClick)
     canvas.addEventListener("wheel", onWheel, { passive: false })
     document.addEventListener("themechange", onTheme)
 
@@ -580,8 +943,6 @@ interface GraphEdge {
     window.addEventListener("resize", resize)
 
     resize()
-    settleAndFit()
-    wake(0.25)
 
     return () => {
       destroyed = true
@@ -591,6 +952,7 @@ interface GraphEdge {
       canvas.removeEventListener("pointerup", onPointerUp)
       canvas.removeEventListener("pointercancel", onPointerUp)
       canvas.removeEventListener("pointerleave", onPointerLeave)
+      canvas.removeEventListener("dblclick", onDoubleClick)
       canvas.removeEventListener("wheel", onWheel)
       document.removeEventListener("themechange", onTheme)
       window.removeEventListener("resize", resize)
@@ -680,7 +1042,6 @@ interface GraphEdge {
 
     try {
       const index = await fetchData
-      // Guard against stale async mount if user navigated again quickly
       if (!document.body.contains(canvas)) return
       const { nodes, edges } = buildGraphData(index, currentSlug, mode)
       activeDestroy = mountGraph(canvas, nodes, edges, currentSlug, mode)

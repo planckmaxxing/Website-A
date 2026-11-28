@@ -154,9 +154,11 @@ function createRouter() {
       win.__gardenHistoryMax = initIdx
     }
 
-    document.head.querySelectorAll<HTMLLinkElement>('link[rel="icon"]').forEach((link) => {
-      if (link.href) link.setAttribute("href", link.href)
-    })
+    document.head
+      .querySelectorAll<HTMLLinkElement>('link[rel="icon"], link[rel="stylesheet"]')
+      .forEach((link) => {
+        if (link.href) link.setAttribute("href", link.href)
+      })
 
     window.addEventListener("click", async (event) => {
       const { url } = getOpts(event) ?? {}

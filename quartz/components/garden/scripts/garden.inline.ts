@@ -214,10 +214,17 @@ declare const fetchData: Promise<ContentIndex>
       focusedSearchIdx = -1
     }
 
+    function getSiteRoot(): string {
+      const cssLink = document.querySelector<HTMLLinkElement>('link[href*="index.css"]')
+      if (cssLink && cssLink.href) {
+        return cssLink.href.replace(/index\.css(?:\?.*)?$/, "")
+      }
+      return window.location.origin + "/"
+    }
+
     function navigateToSlug(targetSlug: FullSlug) {
-      const currentSlug = normalizeSlug(document.body.dataset.slug || "index") as FullSlug
-      const rel = resolveRelative(currentSlug, targetSlug)
-      const url = new URL(rel, window.location.href)
+      const root = getSiteRoot()
+      const url = targetSlug === "index" ? new URL(root) : new URL(targetSlug, root)
       if (searchInput) searchInput.value = ""
       closeSearchDropdown()
       setDrawerOpen(false)
