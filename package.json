@@ -1,36 +1,18 @@
 {
-  "name": "@jackyzha0/quartz",
-  "description": "🌱 publish your digital garden and notes as a website",
+  "name": "w-a",
   "private": true,
-  "version": "4.5.2",
+  "version": "1.0.0",
   "type": "module",
-  "author": "jackyzha0 <j.zhao2k19@gmail.com>",
-  "license": "MIT",
-  "homepage": "https://quartz.jzhao.xyz",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/jackyzha0/quartz.git"
-  },
   "scripts": {
-    "quartz": "./quartz/bootstrap-cli.mjs",
-    "docs": "npx quartz build --serve -d docs",
-    "check": "tsc --noEmit && npx prettier . --check",
-    "format": "npx prettier . --write",
-    "test": "tsx --test",
-    "profile": "0x -D prof ./quartz/bootstrap-cli.mjs build --concurrency=1"
+    "build": "npx quartz build",
+    "serve": "npx quartz build --serve",
+    "check": "tsc --noEmit",
+    "quartz": "./quartz/bootstrap-cli.mjs"
   },
   "engines": {
     "npm": ">=10.9.2",
     "node": ">=22"
   },
-  "keywords": [
-    "site generator",
-    "ssg",
-    "digital-garden",
-    "markdown",
-    "blog",
-    "quartz"
-  ],
   "bin": {
     "quartz": "./quartz/bootstrap-cli.mjs"
   },
