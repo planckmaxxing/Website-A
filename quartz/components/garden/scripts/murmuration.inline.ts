@@ -301,19 +301,99 @@
     window.addEventListener("resize", resize)
     resize()
 
-    // --- Theme Synchronization ---
-    function syncTheme() {
-      const dark = readThemeIsDark()
-      if (dark === isDarkMode) return
-      isDarkMode = dark
-      bgHex = isDarkMode ? "#1e1e1e" : "#ffffff"
-      if (ctx2d) {
-        buildSpriteAtlas(dpr, isDarkMode)
+    // --- Theme Synchronization (Instant for View Transitions, Smooth Lerp Fallback) ---
+    let themeBlend = isDarkMode ? 0.0 : 1.0 // 0 = dark (#1e1e1e), 1 = light (#ffffff)
+    let targetThemeBlend = themeBlend
+    let lastVisibleCount = 0
+
+    function drawFrame(uploadBuffer: boolean) {
+      const useGL = Boolean(gl && !contextLost)
+      if (useGL && gl && glProgram && glBuffer) {
+        // Smooth ease-in-out blend between dark (#1e1e1e, dots 226/228/232) and light (#ffffff, dots 10/10/10)
+        const t = themeBlend
+        const bgVal = (30 + (255 - 30) * t) / 255
+        gl.clearColor(bgVal, bgVal, bgVal, 1.0)
+        gl.clear(gl.COLOR_BUFFER_BIT)
+
+        if (lastVisibleCount > 0) {
+          gl.useProgram(glProgram)
+          gl.uniform2f(uResolutionLoc, physWidth, physHeight)
+          const rDot = (226 + (10 - 226) * t) / 255
+          const gDot = (228 + (10 - 228) * t) / 255
+          const bDot = (232 + (10 - 232) * t) / 255
+          gl.uniform3f(uColorLoc, rDot, gDot, bDot)
+
+          gl.bindBuffer(gl.ARRAY_BUFFER, glBuffer)
+          if (uploadBuffer) {
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, gpuData.subarray(0, lastVisibleCount * 4))
+          }
+          gl.drawArrays(gl.POINTS, 0, lastVisibleCount)
+        }
+      } else if (
+        ctx2d &&
+        atlasCanvas &&
+        projPhysX &&
+        projPhysY &&
+        projSizeIdx &&
+        bucketHead &&
+        bucketNext
+      ) {
+        ctx2d.setTransform(1, 0, 0, 1, 0, 0)
+        ctx2d.fillStyle = bgHex
+        ctx2d.fillRect(0, 0, physWidth, physHeight)
+
+        for (let b = 0; b < ALPHA_LEVELS; b++) {
+          let idx = bucketHead[b]
+          if (idx === -1) continue
+
+          const srcX = b * cellPx
+          while (idx !== -1) {
+            const srcY = projSizeIdx[idx] * cellPx
+            ctx2d.drawImage(
+              atlasCanvas,
+              srcX,
+              srcY,
+              cellPx,
+              cellPx,
+              projPhysX[idx],
+              projPhysY[idx],
+              cellPx,
+              cellPx,
+            )
+            idx = bucketNext[idx]
+          }
+        }
       }
     }
 
-    document.addEventListener("themechange", syncTheme)
-    const themeObserver = new MutationObserver(syncTheme)
+    function applyTheme(dark: boolean, instant: boolean) {
+      isDarkMode = dark
+      bgHex = isDarkMode ? "#1e1e1e" : "#ffffff"
+      targetThemeBlend = isDarkMode ? 0.0 : 1.0
+      if (instant) {
+        themeBlend = targetThemeBlend
+      }
+      if (ctx2d) {
+        buildSpriteAtlas(dpr, isDarkMode)
+      }
+      if (instant && shouldRun()) {
+        drawFrame(false)
+      }
+    }
+
+    ;(window as unknown as { __murmurationSyncTheme?: (dark: boolean, instant: boolean) => void })
+      .__murmurationSyncTheme = applyTheme
+
+    function syncThemeFromEvent(e?: Event) {
+      const custom = e as CustomEvent<{ theme?: string; instant?: boolean }> | undefined
+      const dark = readThemeIsDark()
+      const instant = Boolean(custom?.detail?.instant)
+      if (dark === isDarkMode && (!instant || themeBlend === targetThemeBlend)) return
+      applyTheme(dark, instant)
+    }
+
+    document.addEventListener("themechange", syncThemeFromEvent)
+    const themeObserver = new MutationObserver(() => syncThemeFromEvent())
     themeObserver.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["data-theme"],
@@ -1065,59 +1145,14 @@
         }
       }
 
-      if (useGL && gl && glProgram && glBuffer) {
-        const bgVal = isDarkMode ? 30 / 255 : 1.0
-        gl.clearColor(bgVal, bgVal, bgVal, 1.0)
-        gl.clear(gl.COLOR_BUFFER_BIT)
-
-        if (visibleCount > 0) {
-          gl.useProgram(glProgram)
-          gl.uniform2f(uResolutionLoc, physWidth, physHeight)
-          if (isDarkMode) {
-            gl.uniform3f(uColorLoc, 226 / 255, 228 / 255, 232 / 255)
-          } else {
-            gl.uniform3f(uColorLoc, 10 / 255, 10 / 255, 10 / 255)
-          }
-
-          gl.bindBuffer(gl.ARRAY_BUFFER, glBuffer)
-          gl.bufferSubData(gl.ARRAY_BUFFER, 0, gpuData.subarray(0, visibleCount * 4))
-          gl.drawArrays(gl.POINTS, 0, visibleCount)
-        }
-      } else if (
-        ctx2d &&
-        atlasCanvas &&
-        projPhysX &&
-        projPhysY &&
-        projSizeIdx &&
-        bucketHead &&
-        bucketNext
-      ) {
-        ctx2d.setTransform(1, 0, 0, 1, 0, 0)
-        ctx2d.fillStyle = bgHex
-        ctx2d.fillRect(0, 0, physWidth, physHeight)
-
-        for (let b = 0; b < ALPHA_LEVELS; b++) {
-          let idx = bucketHead[b]
-          if (idx === -1) continue
-
-          const srcX = b * cellPx
-          while (idx !== -1) {
-            const srcY = projSizeIdx[idx] * cellPx
-            ctx2d.drawImage(
-              atlasCanvas,
-              srcX,
-              srcY,
-              cellPx,
-              cellPx,
-              projPhysX[idx],
-              projPhysY[idx],
-              cellPx,
-              cellPx,
-            )
-            idx = bucketNext[idx]
-          }
-        }
+      if (themeBlend !== targetThemeBlend) {
+        const diff = targetThemeBlend - themeBlend
+        const alphaStep = 1.0 - Math.exp(-dt * 9.5)
+        themeBlend = Math.abs(diff) < 0.002 ? targetThemeBlend : themeBlend + diff * alphaStep
       }
+
+      lastVisibleCount = visibleCount
+      drawFrame(true)
 
       rafId = requestAnimationFrame(animate)
     }

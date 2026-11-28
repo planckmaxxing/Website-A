@@ -45,6 +45,26 @@ html[data-theme="light"] {
   padding: 0;
 }
 
+/* Smooth Circular Reveal View Transition (Dark <-> Light) */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 9999;
+}
+
+html.theme-transitioning,
+html.theme-transitioning * {
+  transition: none !important;
+}
+
 html,
 body {
   width: 100%;
@@ -55,8 +75,8 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition:
-    background-color 0.2s ease,
-    color 0.2s ease;
+    background-color 0.42s cubic-bezier(0.22, 1, 0.36, 1),
+    color 0.42s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* Seamless 50/50 Desktop Split-Screen Layout (Zero Dividing Borders) */
@@ -176,7 +196,12 @@ html.reader-mode .garden-divider {
   cursor: pointer;
   transition:
     background-color 0.16s ease,
-    color 0.16s ease;
+    color 0.16s ease,
+    transform 0.14s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.util-icon-btn:active {
+  transform: scale(0.92);
 }
 
 .util-icon-btn:hover {

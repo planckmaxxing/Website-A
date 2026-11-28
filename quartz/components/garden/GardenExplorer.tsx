@@ -3,17 +3,18 @@ import { ExplorerTree } from "./ExplorerTree"
 
 const GardenExplorer: QuartzComponent = ({ allFiles, fileData }: QuartzComponentProps) => {
   const currentSlug = fileData.slug!
-  if (currentSlug !== "index") {
-    return null
-  }
+  const isIndex = currentSlug === "index"
 
   return (
-    <nav class="quartz-explorer" id="explorerSection" aria-label="Explorer">
-      <div class="garden-label">Explorer</div>
-      <div id="bottomExplorerMount">
-        <ExplorerTree allFiles={allFiles} currentSlug={currentSlug} />
-      </div>
-    </nav>
+    <>
+      {!isIndex && <hr class="obsidian-divider garden-divider" />}
+      <nav class="quartz-explorer" id="explorerSection" aria-label="Explorer">
+        <div class="garden-label">Explorer</div>
+        <div id="bottomExplorerMount">
+          <ExplorerTree allFiles={allFiles} currentSlug={currentSlug} />
+        </div>
+      </nav>
+    </>
   )
 }
 

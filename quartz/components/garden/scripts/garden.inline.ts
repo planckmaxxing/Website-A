@@ -293,17 +293,92 @@ declare const fetchData: Promise<ContentIndex>
       }
     })
 
-    // --- Dark / Light Theme Toggle ---
+    // --- Dark / Light Theme Toggle (Satisfying Circular Reveal via View Transitions API) ---
+    let themeTransitionSeq = 0
     if (themeToggleBtn) {
       themeToggleBtn.addEventListener("click", () => {
         const isDark = document.documentElement.getAttribute("data-theme") !== "light"
         const nextTheme = isDark ? "light" : "dark"
-        document.documentElement.setAttribute("data-theme", nextTheme)
-        document.documentElement.setAttribute("saved-theme", nextTheme)
-        try {
-          localStorage.setItem("theme", nextTheme)
-        } catch {}
-        document.dispatchEvent(new CustomEvent("themechange", { detail: { theme: nextTheme } }))
+        const nextIsDark = nextTheme === "dark"
+
+        const applyDomTheme = (instantCanvas: boolean) => {
+          document.documentElement.setAttribute("data-theme", nextTheme)
+          document.documentElement.setAttribute("saved-theme", nextTheme)
+          try {
+            localStorage.setItem("starling-garden-theme", nextTheme)
+          } catch {}
+          const syncFn = (
+            window as unknown as {
+              __murmurationSyncTheme?: (dark: boolean, instant: boolean) => void
+            }
+          ).__murmurationSyncTheme
+          if (syncFn) {
+            syncFn(nextIsDark, instantCanvas)
+          }
+          document.dispatchEvent(
+            new CustomEvent("themechange", { detail: { theme: nextTheme, instant: instantCanvas } }),
+          )
+        }
+
+        const prefersReduced =
+          typeof window.matchMedia === "function" &&
+          window.matchMedia("(prefers-reduced-motion: reduce)").matches
+
+        const startVT = (
+          document as Document & {
+            startViewTransition?: (cb: () => void) => {
+              ready: Promise<void>
+              finished: Promise<void>
+            }
+          }
+        ).startViewTransition
+
+        if (prefersReduced || typeof startVT !== "function") {
+          applyDomTheme(prefersReduced)
+          return
+        }
+
+        const rect = themeToggleBtn.getBoundingClientRect()
+        const originX = rect.left + rect.width * 0.5
+        const originY = rect.top + rect.height * 0.5
+        const maxRadius = Math.hypot(
+          Math.max(originX, window.innerWidth - originX),
+          Math.max(originY, window.innerHeight - originY),
+        )
+
+        const seq = ++themeTransitionSeq
+        document.documentElement.classList.add("theme-transitioning")
+
+        const transition = startVT.call(document, () => {
+          applyDomTheme(true)
+        })
+
+        transition.ready
+          .then(() => {
+            document.documentElement.animate(
+              {
+                clipPath: [
+                  `circle(0px at ${originX}px ${originY}px)`,
+                  `circle(${maxRadius}px at ${originX}px ${originY}px)`,
+                ],
+              },
+              {
+                duration: 620,
+                easing: "cubic-bezier(0.4, 0, 0.2, 1)",
+                fill: "both",
+                pseudoElement: "::view-transition-new(root)",
+              },
+            )
+          })
+          .catch(() => {})
+
+        transition.finished
+          .finally(() => {
+            if (seq === themeTransitionSeq) {
+              document.documentElement.classList.remove("theme-transitioning")
+            }
+          })
+          .catch(() => {})
       })
     }
 

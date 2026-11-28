@@ -254,7 +254,7 @@ export function renderPage(
   const showTitle = slug !== "index" && Boolean(pageTitle) && !hasLeadingH1(root)
 
   const doc = (
-    <html lang={lang} dir={direction} data-theme="dark">
+    <html lang={lang} dir={direction} data-theme="dark" saved-theme="dark">
       <Head {...componentData} />
       <body data-slug={slug}>
         {right.map((DrawerComponent) => (
