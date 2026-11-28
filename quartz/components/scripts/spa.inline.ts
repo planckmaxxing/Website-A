@@ -118,7 +118,10 @@ async function _navigate(url: URL, isBack: boolean = false) {
   // delay setting the url until now
   // at this point everything is loaded so changing the url should resolve to the correct addresses
   if (!isBack) {
-    history.pushState({}, "", url)
+    const curIdx = typeof history.state?.gardenIdx === "number" ? history.state.gardenIdx : 0
+    const nextIdx = curIdx + 1
+    history.pushState({ gardenIdx: nextIdx }, "", url)
+    ;(window as unknown as { __gardenHistoryMax?: number }).__gardenHistoryMax = nextIdx
   }
 
   notifyNav(getFullSlug(window))
@@ -142,6 +145,15 @@ window.spaNavigate = navigate
 
 function createRouter() {
   if (typeof window !== "undefined") {
+    const win = window as unknown as { __gardenHistoryMax?: number }
+    const initIdx = typeof history.state?.gardenIdx === "number" ? history.state.gardenIdx : 0
+    if (typeof history.state?.gardenIdx !== "number") {
+      history.replaceState({ ...(history.state ?? {}), gardenIdx: initIdx }, "")
+    }
+    if (typeof win.__gardenHistoryMax !== "number" || win.__gardenHistoryMax < initIdx) {
+      win.__gardenHistoryMax = initIdx
+    }
+
     document.head.querySelectorAll<HTMLLinkElement>('link[rel="icon"]').forEach((link) => {
       if (link.href) link.setAttribute("href", link.href)
     })
@@ -155,7 +167,10 @@ function createRouter() {
       if (isSamePage(url) && url.hash) {
         const el = document.getElementById(decodeURIComponent(url.hash.substring(1)))
         el?.scrollIntoView()
-        history.pushState({}, "", url)
+        const curIdx = typeof history.state?.gardenIdx === "number" ? history.state.gardenIdx : 0
+        const nextIdx = curIdx + 1
+        history.pushState({ gardenIdx: nextIdx }, "", url)
+        win.__gardenHistoryMax = nextIdx
         return
       }
 

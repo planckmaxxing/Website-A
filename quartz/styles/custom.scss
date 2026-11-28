@@ -153,6 +153,7 @@ html.reader-mode .text-pane {
 
 html.reader-mode .quartz-explorer,
 html.reader-mode .quartz-backlinks,
+html.reader-mode .quartz-graph,
 html.reader-mode .garden-divider {
   display: none;
 }
@@ -180,6 +181,12 @@ html.reader-mode .garden-divider {
   gap: 8px;
 }
 
+.nav-history-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
 .util-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -195,14 +202,15 @@ html.reader-mode .garden-divider {
   transition:
     background-color 0.16s ease,
     color 0.16s ease,
+    opacity 0.16s ease,
     transform 0.14s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.util-icon-btn:active {
+.util-icon-btn:active:not(:disabled) {
   transform: scale(0.92);
 }
 
-.util-icon-btn:hover {
+.util-icon-btn:hover:not(:disabled) {
   background: var(--hover-bg);
   color: var(--heading);
 }
@@ -210,6 +218,12 @@ html.reader-mode .garden-divider {
 .util-icon-btn.is-active {
   background: var(--active-bg);
   color: var(--heading);
+}
+
+.util-icon-btn.is-disabled,
+.util-icon-btn:disabled {
+  opacity: 0.32;
+  cursor: default;
 }
 
 .util-icon-btn svg {
@@ -867,6 +881,112 @@ html[data-theme="light"] #themeToggleBtn .icon-moon {
 .search-dropdown::-webkit-scrollbar-thumb {
   background: var(--border);
   border-radius: 3px;
+}
+
+/* Obsidian-Style Interactive Graph View (Global on Landing, Local on Notes) */
+.quartz-graph {
+  margin-bottom: 2em;
+}
+
+.graph-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75em;
+}
+
+.graph-header .garden-label {
+  margin-bottom: 0;
+}
+
+.graph-expand-btn {
+  width: 26px;
+  height: 26px;
+}
+
+.graph-expand-btn svg {
+  width: 14px;
+  height: 14px;
+}
+
+.graph-canvas-wrap {
+  position: relative;
+  width: 100%;
+  height: 260px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--drawer-bg);
+  overflow: hidden;
+  transition:
+    background-color 0.48s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.48s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.graph-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+}
+
+/* Expanded Global Graph Modal */
+.graph-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1050;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.22s ease;
+}
+
+.graph-modal.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.graph-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--scrim);
+}
+
+.graph-modal-panel {
+  position: relative;
+  width: min(860px, 90vw);
+  height: min(620px, 82vh);
+  background: var(--drawer-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.36);
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+}
+
+.graph-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.graph-modal-body {
+  flex: 1;
+  position: relative;
+  min-height: 0;
 }
 
 /* Responsive Mobile & Tablet Stacked Layout (<= 860px) */

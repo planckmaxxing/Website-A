@@ -98,6 +98,48 @@ declare const fetchData: Promise<ContentIndex>
       })
     }
 
+    const navBackBtn = document.getElementById("navBackBtn") as HTMLButtonElement | null
+    const navForwardBtn = document.getElementById("navForwardBtn") as HTMLButtonElement | null
+
+    function syncHistoryButtons() {
+      const curIdx = typeof history.state?.gardenIdx === "number" ? history.state.gardenIdx : 0
+      const maxIdx =
+        typeof (window as unknown as { __gardenHistoryMax?: number }).__gardenHistoryMax ===
+        "number"
+          ? (window as unknown as { __gardenHistoryMax: number }).__gardenHistoryMax
+          : curIdx
+
+      const canBack = curIdx > 0
+      const canForward = curIdx < maxIdx
+
+      if (navBackBtn) {
+        navBackBtn.disabled = !canBack
+        navBackBtn.classList.toggle("is-disabled", !canBack)
+      }
+      if (navForwardBtn) {
+        navForwardBtn.disabled = !canForward
+        navForwardBtn.classList.toggle("is-disabled", !canForward)
+      }
+    }
+
+    if (navBackBtn) {
+      navBackBtn.addEventListener("click", () => {
+        if (!navBackBtn.disabled) {
+          window.history.back()
+        }
+      })
+    }
+
+    if (navForwardBtn) {
+      navForwardBtn.addEventListener("click", () => {
+        if (!navForwardBtn.disabled) {
+          window.history.forward()
+        }
+      })
+    }
+
+    window.addEventListener("popstate", syncHistoryButtons)
+
     function syncActiveLinks() {
       const currentSlug = normalizeSlug(document.body.dataset.slug || "index") as FullSlug
       const links = document.querySelectorAll<HTMLAnchorElement>(".explorer-link[data-slug]")
@@ -106,10 +148,7 @@ declare const fetchData: Promise<ContentIndex>
         link.classList.toggle("is-active", linkSlug === currentSlug)
         link.setAttribute("href", resolveRelative(currentSlug, linkSlug))
       })
-      const homeBtn = document.getElementById("homeBtn") as HTMLAnchorElement | null
-      if (homeBtn) {
-        homeBtn.setAttribute("href", resolveRelative(currentSlug, "index" as FullSlug))
-      }
+      syncHistoryButtons()
     }
 
     // Delegated folder toggle click handler across both Drawer and Bottom Explorer

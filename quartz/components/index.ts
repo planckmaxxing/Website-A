@@ -28,6 +28,7 @@ import MurmurationCanvas from "./garden/MurmurationCanvas"
 import UtilityBar from "./garden/UtilityBar"
 import GardenExplorer from "./garden/GardenExplorer"
 import GardenBacklinks from "./garden/GardenBacklinks"
+import GardenGraph from "./garden/GardenGraph"
 
 export {
   ArticleTitle,
@@ -60,4 +61,5 @@ export {
   UtilityBar,
   GardenExplorer,
   GardenBacklinks,
+  GardenGraph,
 }

@@ -2,11 +2,9 @@
 import themeScript from "./scripts/theme.inline"
 // @ts-ignore
 import gardenScript from "./scripts/garden.inline"
-import { QuartzComponent, QuartzComponentConstructor, QuartzComponentProps } from "../types"
-import { FullSlug, resolveRelative } from "../../util/path"
+import { QuartzComponent, QuartzComponentConstructor } from "../types"
 
-const UtilityBar: QuartzComponent = ({ fileData }: QuartzComponentProps) => {
-  const homeHref = resolveRelative(fileData.slug!, "index" as FullSlug)
+const UtilityBar: QuartzComponent = () => {
   return (
     <header class="utility-bar" aria-label="Page controls">
       <div class="utility-left">
@@ -33,26 +31,49 @@ const UtilityBar: QuartzComponent = ({ fileData }: QuartzComponentProps) => {
           </svg>
         </button>
 
-        <a
-          href={homeHref}
-          class="util-icon-btn"
-          id="homeBtn"
-          aria-label="Home"
-          title="Home"
-        >
-          <svg
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="1.8"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-            aria-hidden="true"
+        <div class="nav-history-group" role="group" aria-label="History navigation">
+          <button
+            type="button"
+            class="util-icon-btn nav-history-btn is-disabled"
+            id="navBackBtn"
+            aria-label="Navigate back"
+            title="Navigate back"
+            disabled
           >
-            <path d="M3 10.5L12 3l9 7.5" />
-            <path d="M5.5 9.5V20a1 1 0 0 0 1 1h11a1 1 0 0 0 1-1V9.5" />
-          </svg>
-        </a>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.85"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            class="util-icon-btn nav-history-btn is-disabled"
+            id="navForwardBtn"
+            aria-label="Navigate forward"
+            title="Navigate forward"
+            disabled
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.85"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div class="utility-right">
