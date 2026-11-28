@@ -43,6 +43,34 @@ html[data-theme="light"] {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+button,
+a,
+canvas,
+.util-icon-btn,
+.folder-toggle,
+.explorer-link,
+.backlink-btn,
+.search-result-btn {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+
+button,
+.util-icon-btn,
+.folder-toggle,
+.explorer-link,
+.backlink-btn,
+.search-result-btn,
+.graph-canvas {
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 /* Soft GPU-Composited Radial Wave on Theme Switch (Zero ViewTransition Snapshot Overhead) */
