@@ -1,5 +1,6 @@
 ---
 title: Emergent Order Without Control
+order: 1
 ---
 
 Human engineering defaults to hierarchies, clocks, and explicit global state. Natural collective systems invert this assumption: global geometry emerges purely from repeated local update rules such as [[Topological Neighborhoods]] executed asynchronously by agents with limited sensory horizons.

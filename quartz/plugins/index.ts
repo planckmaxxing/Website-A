@@ -1,4 +1,5 @@
 import { StaticResources } from "../util/resources"
+import { FilePath, FullSlug } from "../util/path"
 import { BuildCtx } from "../util/ctx"
 
 export function getStaticResourcesFromPlugins(ctx: BuildCtx) {
@@ -19,23 +20,19 @@ export function getStaticResourcesFromPlugins(ctx: BuildCtx) {
     if (res?.additionalHead) {
       staticResources.additionalHead.push(...res.additionalHead)
     }
-    if (res?.assets) {
-      ;(staticResources.assets ??= []).push(...res.assets)
-    }
   }
 
   // if serving locally, listen for rebuilds and reload the page
   if (ctx.argv.serve) {
-    const wsHost = ctx.argv.remoteDevHost || "localhost"
+    const wsUrl = ctx.argv.remoteDevHost
+      ? `wss://${ctx.argv.remoteDevHost}:${ctx.argv.wsPort}`
+      : `ws://localhost:${ctx.argv.wsPort}`
 
     staticResources.js.push({
       loadTime: "afterDOMReady",
       contentType: "inline",
       script: `
-        // the dev server speaks plain ws unless it sits behind a TLS proxy,
-        // so follow the page instead of assuming
-        const wsProtocol = window.location.protocol === "https:" ? "wss:" : "ws:"
-        const socket = new WebSocket(\`\${wsProtocol}//${wsHost}:${ctx.argv.wsPort}\`)
+        const socket = new WebSocket('${wsUrl}')
         // reload(true) ensures resources like images and scripts are fetched again in firefox
         socket.addEventListener('message', () => document.location.reload(true))
       `,
@@ -48,7 +45,12 @@ export function getStaticResourcesFromPlugins(ctx: BuildCtx) {
 export * from "./transformers"
 export * from "./filters"
 export * from "./emitters"
-export * from "./types"
-export * from "./config"
-export * as PageTypes from "./pageTypes"
-export * as PluginLoader from "./loader"
+
+declare module "vfile" {
+  // inserted in processors.ts
+  interface DataMap {
+    slug: FullSlug
+    filePath: FilePath
+    relativePath: FilePath
+  }
+}

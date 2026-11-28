@@ -1,17 +1,19 @@
-# Quartz v5
+# Starling Murmuration — Quartz Digital Garden
 
-> “[One] who works with the door open gets all kinds of interruptions, but [they] also occasionally gets clues as to what the world is and what might be important.” — Richard Hamming
+A minimalist split-screen digital garden powered by [Quartz v4](https://quartz.jzhao.xyz) (open-source Obsidian publisher), pairing a zero-lag 3D Starling Murmuration canvas with an editorial Markdown & KaTeX reader.
 
-Quartz is a set of tools that helps you publish your [digital garden](https://jzhao.xyz/posts/networked-thought) and notes as a website for free.
+## Updating the Website
 
-🔗 Read the documentation and get started: https://quartz.jzhao.xyz/
+Push any `.md` file into `content/` (or edit existing files) on `main`, and GitHub Actions automatically rebuilds and deploys the site:
 
-[Join the Discord Community](https://discord.gg/cRFFHYye7t)
+- **Home / About page**: edit `content/index.md`
+- **Add a note to an existing folder**: push to `content/notes/My Note.md`, `content/essays/...`, or `content/archive/...`
+- **Create a new folder**: push to `content/<folder>/My Note.md` — it appears automatically in the Explorer, Search, and Backlinks
+- **Obsidian features supported**: `[[Wikilinks]]`, `[[Note|Display Alias]]`, `$inline math$`, `$$display math$$`, code blocks, lists, and YAML frontmatter (`title`, `order`, `tags`, `draft`)
 
-## Sponsors
+## Local Preview
 
-<p align="center">
-  <a href="https://github.com/sponsors/jackyzha0">
-    <img src="https://cdn.jsdelivr.net/gh/jackyzha0/jackyzha0/sponsorkit/sponsors.svg" />
-  </a>
-</p>
+```bash
+npm ci
+npx quartz build --serve
+```

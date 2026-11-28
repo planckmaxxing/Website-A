@@ -1,10 +1,11 @@
-@use "./base.scss";
+@use "./syntax.scss";
 
 /* ==========================================================================
-   Starling Murmuration + Minimalist Editorial Reader Theme
-   Interface Font: Inter | Body Text Font: Public Sans
+   Starling Murmuration & Minimalist Quartz Editorial Reader
+   Exact UI fidelity to what.html
    ========================================================================== */
 
+/* Theme Custom Properties (Obsidian Dark Charcoal Default, Light Mode Override) */
 :root {
   --bg: #1e1e1e;
   --drawer-bg: #181818;
@@ -19,10 +20,6 @@
   --active-bg: rgba(255, 255, 255, 0.1);
   --surface: #262626;
   --scrim: rgba(0, 0, 0, 0.5);
-  --ui-font: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
-    sans-serif;
-  --body-font: "Public Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica,
-    Arial, sans-serif;
 }
 
 html[data-theme="light"] {
@@ -41,13 +38,17 @@ html[data-theme="light"] {
   --scrim: rgba(0, 0, 0, 0.24);
 }
 
-/* Override Quartz base.scss layout when using MurmurationFrame */
+/* Global Reset & Seamless Base */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
 html,
 body {
   width: 100%;
   height: 100%;
-  margin: 0;
-  padding: 0;
   overflow: hidden;
   background-color: var(--bg);
   color: var(--text);
@@ -56,17 +57,6 @@ body {
   transition:
     background-color 0.2s ease,
     color 0.2s ease;
-}
-
-#quartz-root[data-frame="murmuration"] {
-  display: contents;
-  max-width: none;
-  margin: 0;
-  padding: 0;
-}
-
-#quartz-root[data-frame="murmuration"] * {
-  box-sizing: border-box;
 }
 
 /* Seamless 50/50 Desktop Split-Screen Layout (Zero Dividing Borders) */
@@ -86,7 +76,6 @@ body {
   background-color: var(--bg);
   overflow: hidden;
   contain: strict;
-  transform: translateZ(0);
   user-select: none;
   -webkit-user-select: none;
   transition:
@@ -99,8 +88,7 @@ canvas#swarmCanvas {
   display: block;
   width: 100%;
   height: 100%;
-  transform: translateZ(0);
-  will-change: contents;
+  /* Preserve smooth vertical page scrolling on mobile while tracking localized touch wake */
   touch-action: pan-y;
   cursor: default;
 }
@@ -115,7 +103,15 @@ canvas#swarmCanvas {
   padding: 8vh 7vw 10vh 7vw;
   background-color: var(--bg);
   color: var(--text);
-  font-family: var(--body-font);
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
   font-weight: 400;
   font-size: 12pt;
   line-height: 1.55;
@@ -152,14 +148,13 @@ html.reader-mode .garden-divider {
   margin: 0 auto;
 }
 
-/* Top Utility Bar (Inter Interface Font, Minimal Quartz Style) */
+/* Top Utility Bar (Minimal Quartz Style, No Brand Text) */
 .utility-bar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 2.2em;
-  font-family: var(--ui-font);
 }
 
 .utility-right {
@@ -200,6 +195,7 @@ html.reader-mode .garden-divider {
   display: block;
 }
 
+/* Exact Flush-Left Alignment for Hamburger Button with Heading & Paragraphs */
 #menuDrawerBtn {
   width: auto;
   padding-left: 0;
@@ -213,6 +209,7 @@ html.reader-mode .garden-divider {
   height: 18px;
 }
 
+/* Strictly Single Icon Visibility for Dark / Light Mode Toggle */
 html[data-theme="dark"] .icon-sun {
   display: none !important;
 }
@@ -224,7 +221,6 @@ html[data-theme="light"] .icon-moon {
 /* Search Input Box & Navigable Dropdown */
 .search-wrapper {
   position: relative;
-  font-family: var(--ui-font);
 }
 
 .search-box {
@@ -257,13 +253,18 @@ html[data-theme="light"] .icon-moon {
   outline: none;
   background: transparent;
   color: var(--text);
-  font-family: var(--ui-font);
+  font-family: inherit;
   font-size: 10.5pt;
   line-height: 1;
 }
 
 .search-input::placeholder {
   color: var(--muted);
+}
+
+.search-input::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .search-dropdown {
@@ -296,7 +297,7 @@ html[data-theme="light"] .icon-moon {
   border-radius: 6px;
   background: transparent;
   color: var(--text);
-  font-family: var(--ui-font);
+  font-family: inherit;
   font-size: 10.5pt;
   text-align: left;
   cursor: pointer;
@@ -317,7 +318,6 @@ html[data-theme="light"] .icon-moon {
   padding: 8px 10px;
   font-size: 10pt;
   color: var(--muted);
-  font-family: var(--ui-font);
 }
 
 /* Left Slide-Out Sidebar Drawer (Quartz / Obsidian Publish Style) */
@@ -351,7 +351,15 @@ html[data-theme="light"] .icon-moon {
     transform 0.26s cubic-bezier(0.22, 1, 0.36, 1),
     background-color 0.2s ease;
   z-index: 1000;
-  font-family: var(--ui-font);
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
 }
 
 .left-drawer.is-open {
@@ -373,10 +381,23 @@ html[data-theme="light"] .icon-moon {
   color: var(--muted);
 }
 
-/* Editorial Typography — Headings in Inter, Body in Public Sans (12pt) */
-#pageContent h1,
-.about-heading {
-  font-family: var(--ui-font);
+/* Editorial Typography — Exact 12pt Inter */
+#pageContent > article {
+  margin: 0;
+  padding: 0;
+}
+
+.about-heading,
+#pageContent h1 {
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
   font-size: 12pt;
   font-weight: 600;
   line-height: 1.55;
@@ -386,8 +407,10 @@ html[data-theme="light"] .icon-moon {
 
 #pageContent h2,
 #pageContent h3,
-#pageContent h4 {
-  font-family: var(--ui-font);
+#pageContent h4,
+#pageContent h5,
+#pageContent h6 {
+  font-family: inherit;
   font-size: 12pt;
   font-weight: 600;
   line-height: 1.55;
@@ -395,10 +418,27 @@ html[data-theme="light"] .icon-moon {
   margin: 1.4em 0 0.7em 0;
 }
 
-#pageContent p {
+#pageContent h1 a[role="anchor"],
+#pageContent h2 a[role="anchor"],
+#pageContent h3 a[role="anchor"],
+#pageContent h4 a[role="anchor"],
+#pageContent h5 a[role="anchor"],
+#pageContent h6 a[role="anchor"] {
+  display: none;
+}
+
+.text-pane p {
   max-width: 60ch;
   margin: 0 0 1.15em 0;
-  font-family: var(--body-font);
+  font-family:
+    "Inter",
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
   font-size: 12pt;
   font-weight: 400;
   line-height: 1.55;
@@ -408,7 +448,7 @@ html[data-theme="light"] .icon-moon {
   -webkit-font-smoothing: antialiased;
 }
 
-#pageContent p:last-child {
+.text-pane p:last-child {
   margin-bottom: 0;
 }
 
@@ -416,7 +456,6 @@ html[data-theme="light"] .icon-moon {
 #pageContent ol {
   margin: 0 0 1.15em 1.25em;
   padding: 0;
-  font-family: var(--body-font);
 }
 
 #pageContent li {
@@ -426,9 +465,17 @@ html[data-theme="light"] .icon-moon {
   color: var(--text);
 }
 
+#pageContent li > p {
+  margin-bottom: 0.45em;
+}
+
 #pageContent strong {
   font-weight: 600;
   color: var(--heading);
+}
+
+#pageContent em {
+  font-style: italic;
 }
 
 #pageContent blockquote {
@@ -436,39 +483,83 @@ html[data-theme="light"] .icon-moon {
   padding-left: 1em;
   border-left: 2px solid var(--border);
   color: var(--muted);
-  font-family: var(--body-font);
 }
 
 #pageContent code {
-  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--codeFont), ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.9em;
-  background: var(--hover-bg);
-  padding: 0.12em 0.35em;
+  padding: 0.1em 0.35em;
   border-radius: 4px;
+  background: var(--surface);
+  color: var(--heading);
 }
 
 #pageContent pre {
-  background: var(--surface);
+  margin: 1.15em 0;
+  padding: 0.85em 1em;
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
-  padding: 12px 14px;
+  background: var(--surface);
   overflow-x: auto;
-  margin: 1.15em 0;
+  font-size: 10pt;
+  line-height: 1.5;
 }
 
 #pageContent pre code {
-  background: transparent;
   padding: 0;
+  background: transparent;
+  border-radius: 0;
+  font-size: inherit;
 }
 
-/* Obsidian-Style [[Wikilinks]] & Links */
-#pageContent a.internal,
-#pageContent a.external,
-.wikilink {
+#pageContent img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  margin: 1em 0;
+}
+
+#pageContent hr {
+  border: none;
+  height: 1px;
+  background: var(--border);
+  margin: 1.15em 0;
+  width: 100%;
+}
+
+#pageContent table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.15em 0;
+  font-size: 11pt;
+}
+
+#pageContent th,
+#pageContent td {
+  padding: 0.45em 0.65em;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+}
+
+#pageContent th {
+  color: var(--heading);
+  font-weight: 600;
+  border-bottom-color: var(--border);
+}
+
+.tldr-inline {
+  font-weight: 600;
+  color: var(--heading);
+}
+
+/* Obsidian-Style [[Wikilinks]] & Editorial Links */
+.wikilink,
+#pageContent a {
   display: inline;
   color: rgb(160, 70, 70);
   background: transparent;
   padding: 0;
+  border-radius: 0;
   font-family: inherit;
   font-size: inherit;
   font-weight: inherit;
@@ -479,14 +570,14 @@ html[data-theme="light"] .icon-moon {
   transition: opacity 0.15s ease;
 }
 
-#pageContent a.internal:hover,
-#pageContent a.external:hover,
-.wikilink:hover {
+.wikilink:hover,
+#pageContent a:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
   opacity: 0.88;
 }
 
+/* KaTeX Math Typography */
 .text-pane .katex {
   color: var(--text);
   font-size: 1.06em;
@@ -500,7 +591,6 @@ html[data-theme="light"] .icon-moon {
   overflow-y: hidden;
 }
 
-#pageContent hr,
 .obsidian-divider {
   border: none;
   height: 1px;
@@ -509,9 +599,8 @@ html[data-theme="light"] .icon-moon {
   width: 100%;
 }
 
-/* Quartz / Obsidian Section Labels (Title Case, Muted Neutral, Inter) */
+/* Quartz / Obsidian Section Labels (Title Case, Muted Neutral) */
 .garden-label {
-  font-family: var(--ui-font);
   font-size: 11pt;
   font-weight: 500;
   color: var(--muted);
@@ -522,19 +611,15 @@ html[data-theme="light"] .icon-moon {
 .quartz-explorer {
   margin-bottom: 2em;
   border-radius: 8px;
-  font-family: var(--ui-font);
 }
 
-/* Contextual Backlinks Section */
+/* Contextual Backlinks Section (Shown on All Note Pages Instead of Bottom Explorer) */
 .quartz-backlinks {
   margin-bottom: 2em;
-  font-family: var(--ui-font);
 }
 
 .backlinks-list {
   list-style: none;
-  margin: 0;
-  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 3px;
@@ -552,7 +637,7 @@ html[data-theme="light"] .icon-moon {
   border-radius: 6px;
   background: transparent;
   color: var(--link);
-  font-family: var(--ui-font);
+  font-family: inherit;
   font-size: 11pt;
   font-weight: 400;
   line-height: 1.4;
@@ -581,8 +666,6 @@ html[data-theme="light"] .icon-moon {
 
 .explorer-list {
   list-style: none;
-  margin: 0;
-  padding: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -598,12 +681,15 @@ html[data-theme="light"] .icon-moon {
   border-radius: 6px;
   background: transparent;
   color: var(--link);
-  font-family: var(--ui-font);
+  font-family: inherit;
   font-size: 11pt;
   font-weight: 400;
   line-height: 1.4;
   text-align: left;
+  text-decoration: none;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: pointer;
   transition:
     background-color 0.16s ease,
@@ -635,7 +721,7 @@ html[data-theme="light"] .icon-moon {
   border-radius: 6px;
   background: transparent;
   color: var(--folder);
-  font-family: var(--ui-font);
+  font-family: inherit;
   font-size: 11pt;
   font-weight: 500;
   line-height: 1.4;
@@ -678,6 +764,59 @@ html[data-theme="light"] .icon-moon {
 
 .explorer-folder.is-collapsed .folder-children {
   display: none;
+}
+
+/* Folder / Tag Listing Pages Fallback Styling */
+.section-ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.section-li .section {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.section-li .meta {
+  font-size: 9.5pt;
+  color: var(--muted);
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.section-li h3 {
+  margin: 0;
+  font-size: 11.5pt;
+  font-weight: 400;
+}
+
+.section-li .tags {
+  display: none;
+}
+
+/* Subtle Matte Scrollbar */
+.text-pane::-webkit-scrollbar,
+.left-drawer::-webkit-scrollbar,
+.search-dropdown::-webkit-scrollbar {
+  width: 6px;
+}
+
+.text-pane::-webkit-scrollbar-track,
+.left-drawer::-webkit-scrollbar-track,
+.search-dropdown::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.text-pane::-webkit-scrollbar-thumb,
+.left-drawer::-webkit-scrollbar-thumb,
+.search-dropdown::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
 }
 
 /* Responsive Mobile & Tablet Stacked Layout (<= 860px) */
